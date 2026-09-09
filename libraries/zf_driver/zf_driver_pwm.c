@@ -26,6 +26,8 @@ static const pwm_hw_t s_pwm[PWM_NUM] = {
   { TIMER_3, TIM_CHANNEL_2 }, /* PWM_TIM3_CH2 */
   { TIMER_3, TIM_CHANNEL_3 }, /* PWM_TIM3_CH3 */
   { TIMER_3, TIM_CHANNEL_4 }, /* PWM_TIM3_CH4 */
+  { TIMER_4, TIM_CHANNEL_1 }, /* PWM_TIM4_CH1 */
+  { TIMER_4, TIM_CHANNEL_2 }, /* PWM_TIM4_CH2 */
   { TIMER_4, TIM_CHANNEL_3 }, /* PWM_TIM4_CH3 */
   { TIMER_4, TIM_CHANNEL_4 }, /* PWM_TIM4_CH4 */
 };

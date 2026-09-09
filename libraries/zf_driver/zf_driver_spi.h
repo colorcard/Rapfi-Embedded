@@ -31,6 +31,14 @@ typedef struct {
 zf_status_t spi_init(spi_index_enum bus, const spi_cfg_t *cfg);
 
 /**
+ * @brief 动态修改 SPI 波特率预分频（同一总线上的不同器件可各自设置）。
+ * @param bus SPI 逻辑编号。
+ * @param prescaler SPI_BAUDRATEPRESCALER_xxx。
+ * @return ZF_OK 或 ZF_INVALID_PARAM。
+ */
+zf_status_t spi_set_prescaler(spi_index_enum bus, uint32_t prescaler);
+
+/**
  * @brief 阻塞发送数据（忽略接收）。
  * @param bus SPI 逻辑编号。
  * @param data 待发送缓冲区。

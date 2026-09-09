@@ -80,6 +80,19 @@ zf_status_t bsp_init(void)
 #if (BSP_ENABLE_ADC4 != 0U)
   status = bsp_collect(status, adc_init(NULL));
 #endif
+#if (BSP_ENABLE_ENCODER != 0U)
+  status = bsp_collect(status, encoder_init(ENCODER_1));
+  status = bsp_collect(status, encoder_init(ENCODER_2));
+#endif
+#if (BSP_ENABLE_NRF24L01 != 0U)
+  status = bsp_collect(status, nrf24l01_init());
+#endif
+#if (BSP_ENABLE_IMU660RA != 0U)
+  status = bsp_collect(status, imu660ra_init());
+#endif
+#if (BSP_ENABLE_SERVO != 0U)
+  status = bsp_collect(status, servo_init());
+#endif
 
   /* 周期中断：按键扫描等周期任务。 */
 #if (BSP_ENABLE_PIT != 0U)

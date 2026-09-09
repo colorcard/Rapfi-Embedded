@@ -21,7 +21,9 @@ typedef enum {
   PWM_TIM3_CH2,     /**< PE3 */
   PWM_TIM3_CH3,     /**< PE4 */
   PWM_TIM3_CH4,     /**< PE5 */
-  PWM_TIM4_CH3,     /**< PD14（CH1/CH2 被 LCD 占用） */
+  PWM_TIM4_CH1,     /**< PD12（与 LCD DC 冲突） */
+  PWM_TIM4_CH2,     /**< PD13（与 LCD BL 冲突） */
+  PWM_TIM4_CH3,     /**< PD14 */
   PWM_TIM4_CH4,     /**< PD15 */
   PWM_NUM
 } pwm_channel_enum;

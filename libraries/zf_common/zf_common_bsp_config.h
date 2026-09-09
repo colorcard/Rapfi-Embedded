@@ -69,6 +69,10 @@
 #define BSP_ENABLE_CAN2     0U
 #define BSP_ENABLE_ADC4     0U
 #define BSP_ENABLE_PIT      1U
+#define BSP_ENABLE_ENCODER 0U /* TIM2/TIM3 正交编码器 */
+#define BSP_ENABLE_NRF24L01 0U /* PB1 CSN / PB2 CE / SPI1 */
+#define BSP_ENABLE_IMU660RA 0U /* I2C2（需同时打开 BSP_ENABLE_I2C2） */
+#define BSP_ENABLE_SERVO 0U /* 启用会占用 LCD 的 PD12/PD13 */
 #if defined(DEBUG)
 #define BSP_ENABLE_IWDG     0U /* 调试时关闭，避免断点触发复位 */
 #else

@@ -15,7 +15,8 @@ static const uint32_t s_tim2_channels[] = {TIM_CHANNEL_1, TIM_CHANNEL_2,
                                            TIM_CHANNEL_3, TIM_CHANNEL_4};
 static const uint32_t s_tim3_channels[] = {TIM_CHANNEL_1, TIM_CHANNEL_2,
                                            TIM_CHANNEL_3, TIM_CHANNEL_4};
-static const uint32_t s_tim4_channels[] = {TIM_CHANNEL_3, TIM_CHANNEL_4};
+static const uint32_t s_tim4_channels[] = {TIM_CHANNEL_1, TIM_CHANNEL_2,
+                                           TIM_CHANNEL_3, TIM_CHANNEL_4};
 
 TIM_HandleTypeDef *timer_get_handle(timer_index_enum index)
 {
@@ -218,7 +219,7 @@ zf_status_t timer_hw_init(timer_index_enum index)
       if (hal_status != HAL_OK) {
         return zf_from_hal(hal_status);
       }
-      if (timer_pwm_channels_init(htim, s_tim4_channels, 2U) != ZF_OK) {
+      if (timer_pwm_channels_init(htim, s_tim4_channels, 4U) != ZF_OK) {
         return ZF_ERROR;
       }
       HAL_TIM_MspPostInit(htim);

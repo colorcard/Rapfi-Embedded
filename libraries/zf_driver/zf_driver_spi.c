@@ -65,6 +65,22 @@ zf_status_t spi_init(spi_index_enum bus, const spi_cfg_t *cfg)
   return zf_from_hal(HAL_SPI_Init(handle));
 }
 
+zf_status_t spi_set_prescaler(spi_index_enum bus, uint32_t prescaler)
+{
+  SPI_HandleTypeDef *handle = spi_handle(bus);
+
+  if ((handle == NULL) || (handle->Instance == NULL) ||
+      ((prescaler & ~(uint32_t)SPI_CR1_BR) != 0U)) {
+    return ZF_INVALID_PARAM;
+  }
+
+  handle->Init.BaudRatePrescaler = prescaler;
+  __HAL_SPI_DISABLE(handle);
+  MODIFY_REG(handle->Instance->CR1, SPI_CR1_BR, prescaler);
+  __HAL_SPI_ENABLE(handle);
+  return ZF_OK;
+}
+
 zf_status_t spi_write_8bit_array(spi_index_enum bus, const uint8_t *data,
                                  uint16_t length, uint32_t timeout_ms)
 {
