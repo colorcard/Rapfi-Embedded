@@ -53,6 +53,7 @@ static zf_status_t timer_pwm_channels_init(TIM_HandleTypeDef *htim,
                                            uint32_t count)
 {
   TIM_OC_InitTypeDef config = {0};
+  HAL_StatusTypeDef hal_status;
   uint32_t i;
 
   config.OCMode = TIM_OCMODE_PWM1;
@@ -63,8 +64,9 @@ static zf_status_t timer_pwm_channels_init(TIM_HandleTypeDef *htim,
   config.OCIdleState = TIM_OCIDLESTATE_RESET;
   config.OCNIdleState = TIM_OCNIDLESTATE_RESET;
   for (i = 0U; i < count; ++i) {
-    if (HAL_TIM_PWM_ConfigChannel(htim, &config, channels[i]) != HAL_OK) {
-      return ZF_ERROR;
+    hal_status = HAL_TIM_PWM_ConfigChannel(htim, &config, channels[i]);
+    if (hal_status != HAL_OK) {
+      return zf_from_hal(hal_status);
     }
   }
   return ZF_OK;
@@ -75,6 +77,7 @@ zf_status_t timer_hw_init(timer_index_enum index)
   TIM_HandleTypeDef *htim;
   TIM_ClockConfigTypeDef clock_config = {0};
   TIM_MasterConfigTypeDef master_config = {0};
+  HAL_StatusTypeDef hal_status;
 
   if ((uint32_t)index >= (uint32_t)TIMER_NUM) {
     return ZF_INVALID_PARAM;
@@ -91,21 +94,25 @@ zf_status_t timer_hw_init(timer_index_enum index)
       htim->Instance = TIM1;
       htim->Init.Prescaler = 16U;
       htim->Init.Period = 9999U;
-      if (HAL_TIM_Base_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_Base_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       clock_config.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-      if (HAL_TIM_ConfigClockSource(htim, &clock_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_ConfigClockSource(htim, &clock_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
-      if (HAL_TIM_PWM_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_PWM_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       master_config.MasterOutputTrigger = TIM_TRGO_RESET;
       master_config.MasterOutputTrigger2 = TIM_TRGO2_RESET;
       master_config.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-      if (HAL_TIMEx_MasterConfigSynchronization(htim, &master_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIMEx_MasterConfigSynchronization(htim, &master_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       if (timer_pwm_channels_init(htim, s_tim1_channels, 4U) != ZF_OK) {
         return ZF_ERROR;
@@ -122,8 +129,9 @@ zf_status_t timer_hw_init(timer_index_enum index)
         break_config.Break2Polarity = TIM_BREAK2POLARITY_HIGH;
         break_config.Break2AFMode = TIM_BREAK_AFMODE_INPUT;
         break_config.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
-        if (HAL_TIMEx_ConfigBreakDeadTime(htim, &break_config) != HAL_OK) {
-          return ZF_ERROR;
+        hal_status = HAL_TIMEx_ConfigBreakDeadTime(htim, &break_config);
+        if (hal_status != HAL_OK) {
+          return zf_from_hal(hal_status);
         }
       }
       HAL_TIM_MspPostInit(htim);
@@ -133,20 +141,24 @@ zf_status_t timer_hw_init(timer_index_enum index)
       htim->Instance = TIM2;
       htim->Init.Prescaler = 16U;
       htim->Init.Period = 9999U;
-      if (HAL_TIM_Base_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_Base_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       clock_config.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-      if (HAL_TIM_ConfigClockSource(htim, &clock_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_ConfigClockSource(htim, &clock_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
-      if (HAL_TIM_PWM_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_PWM_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       master_config.MasterOutputTrigger = TIM_TRGO_RESET;
       master_config.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-      if (HAL_TIMEx_MasterConfigSynchronization(htim, &master_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIMEx_MasterConfigSynchronization(htim, &master_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       if (timer_pwm_channels_init(htim, s_tim2_channels, 4U) != ZF_OK) {
         return ZF_ERROR;
@@ -158,20 +170,24 @@ zf_status_t timer_hw_init(timer_index_enum index)
       htim->Instance = TIM3;
       htim->Init.Prescaler = 16U;
       htim->Init.Period = 9999U;
-      if (HAL_TIM_Base_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_Base_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       clock_config.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-      if (HAL_TIM_ConfigClockSource(htim, &clock_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_ConfigClockSource(htim, &clock_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
-      if (HAL_TIM_PWM_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_PWM_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       master_config.MasterOutputTrigger = TIM_TRGO_RESET;
       master_config.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-      if (HAL_TIMEx_MasterConfigSynchronization(htim, &master_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIMEx_MasterConfigSynchronization(htim, &master_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       if (timer_pwm_channels_init(htim, s_tim3_channels, 4U) != ZF_OK) {
         return ZF_ERROR;
@@ -183,20 +199,24 @@ zf_status_t timer_hw_init(timer_index_enum index)
       htim->Instance = TIM4;
       htim->Init.Prescaler = 16U;
       htim->Init.Period = 9999U;
-      if (HAL_TIM_Base_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_Base_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       clock_config.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-      if (HAL_TIM_ConfigClockSource(htim, &clock_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_ConfigClockSource(htim, &clock_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
-      if (HAL_TIM_PWM_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_PWM_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       master_config.MasterOutputTrigger = TIM_TRGO_RESET;
       master_config.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-      if (HAL_TIMEx_MasterConfigSynchronization(htim, &master_config) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIMEx_MasterConfigSynchronization(htim, &master_config);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       if (timer_pwm_channels_init(htim, s_tim4_channels, 2U) != ZF_OK) {
         return ZF_ERROR;
@@ -209,8 +229,9 @@ zf_status_t timer_hw_init(timer_index_enum index)
       htim->Instance = TIM17;
       htim->Init.Prescaler = 169U;
       htim->Init.Period = 9999U;
-      if (HAL_TIM_Base_Init(htim) != HAL_OK) {
-        return ZF_ERROR;
+      hal_status = HAL_TIM_Base_Init(htim);
+      if (hal_status != HAL_OK) {
+        return zf_from_hal(hal_status);
       }
       break;
   }

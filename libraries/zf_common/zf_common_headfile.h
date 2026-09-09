@@ -11,6 +11,7 @@
 #include "zf_common_clock.h"
 #include "zf_common_debug.h"
 #include "zf_common_delay.h"
+#include "zf_common_fault.h"
 #include "zf_common_fifo.h"
 #include "zf_common_interrupt.h"
 
@@ -25,6 +26,7 @@
 #include "zf_driver_spi.h"
 #include "zf_driver_timer.h"
 #include "zf_driver_uart.h"
+#include "zf_driver_watchdog.h"
 
 /* ====================== 外接设备驱动层 ====================== */
 #include "zf_device_buzzer.h"

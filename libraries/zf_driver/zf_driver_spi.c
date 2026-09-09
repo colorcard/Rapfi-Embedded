@@ -62,10 +62,7 @@ zf_status_t spi_init(spi_index_enum bus, const spi_cfg_t *cfg)
   handle->Init.CRCPolynomial = 7;
   handle->Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
   handle->Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
-  if (HAL_SPI_Init(handle) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_SPI_Init(handle));
 }
 
 zf_status_t spi_write_8bit_array(spi_index_enum bus, const uint8_t *data,
@@ -76,10 +73,8 @@ zf_status_t spi_write_8bit_array(spi_index_enum bus, const uint8_t *data,
   if ((handle == NULL) || (data == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_SPI_Transmit(handle, (uint8_t *)data, length, timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_SPI_Transmit(handle, (uint8_t *)data, length,
+                                      timeout_ms));
 }
 
 zf_status_t spi_read_8bit_array(spi_index_enum bus, uint8_t *data,
@@ -90,10 +85,7 @@ zf_status_t spi_read_8bit_array(spi_index_enum bus, uint8_t *data,
   if ((handle == NULL) || (data == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_SPI_Receive(handle, data, length, timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_SPI_Receive(handle, data, length, timeout_ms));
 }
 
 zf_status_t spi_transfer_8bit(spi_index_enum bus, const uint8_t *tx, uint8_t *rx,
@@ -104,10 +96,8 @@ zf_status_t spi_transfer_8bit(spi_index_enum bus, const uint8_t *tx, uint8_t *rx
   if ((handle == NULL) || (tx == NULL) || (rx == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_SPI_TransmitReceive(handle, (uint8_t *)tx, rx, length, timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_SPI_TransmitReceive(handle, (uint8_t *)tx, rx, length,
+                                             timeout_ms));
 }
 
 void HAL_SPI_MspInit(SPI_HandleTypeDef *spiHandle)

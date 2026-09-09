@@ -26,54 +26,70 @@ void error_handler(void)
   }
 }
 
+/**
+ * @brief 记录驱动初始化结果，保留第一个错误。
+ * @param status 当前累计状态。
+ * @param result 本次初始化结果。
+ * @return 更新后的累计状态。
+ */
+static zf_status_t bsp_collect(zf_status_t status, zf_status_t result)
+{
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    return result;
+  }
+  return status;
+}
+
 zf_status_t bsp_init(void)
 {
   zf_status_t status = ZF_OK;
-  zf_status_t result;
 
-  /* 板级设备：配置各自的引脚并设置初始状态。 */
+  /* 板级设备：只初始化 zf_common_bsp_config.h 中打开的模块。 */
+#if (BSP_ENABLE_LED != 0U)
   led_init();
+#endif
+#if (BSP_ENABLE_KEY != 0U)
   key_init();
+#endif
+#if (BSP_ENABLE_BUZZER != 0U)
   buzzer_init();
+#endif
 
-  /* 外设驱动：完成时钟、GPIO 复用、外设参数初始化。 */
-  result = uart_init(UART_1, NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
-  result = uart_init(UART_2, NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
-  result = uart_init(UART_3, NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
-  result = i2c_init(I2C_2, NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
-  result = i2c_init(I2C_4, NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
-  result = spi_init(SPI_1, NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
-  result = can_init(CAN_2, NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
-  result = adc_init(NULL);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
+  /* 外设驱动：完成时钟、GPIO 复用与参数初始化。 */
+#if (BSP_ENABLE_UART1 != 0U)
+  status = bsp_collect(status, uart_init(UART_1, NULL));
+#endif
+#if (BSP_ENABLE_UART2 != 0U)
+  status = bsp_collect(status, uart_init(UART_2, NULL));
+#endif
+#if (BSP_ENABLE_UART3 != 0U)
+  status = bsp_collect(status, uart_init(UART_3, NULL));
+#endif
+#if (BSP_ENABLE_I2C2 != 0U)
+  status = bsp_collect(status, i2c_init(I2C_2, NULL));
+#endif
+#if (BSP_ENABLE_I2C4 != 0U)
+  status = bsp_collect(status, i2c_init(I2C_4, NULL));
+#endif
+#if (BSP_ENABLE_SPI1 != 0U)
+  status = bsp_collect(status, spi_init(SPI_1, NULL));
+#endif
+#if (BSP_ENABLE_CAN2 != 0U)
+  status = bsp_collect(status, can_init(CAN_2, NULL));
+#endif
+#if (BSP_ENABLE_ADC4 != 0U)
+  status = bsp_collect(status, adc_init(NULL));
+#endif
 
-  /* 周期中断，用于按键扫描。 */
-  result = pit_init(PIT_DEFAULT_PERIOD_MS);
-  if ((result != ZF_OK) && (status == ZF_OK)) {
-    status = result;
-  }
+  /* 周期中断：按键扫描等周期任务。 */
+#if (BSP_ENABLE_PIT != 0U)
+  status = bsp_collect(status, pit_init(PIT_DEFAULT_PERIOD_MS));
+#endif
+
+  /* 独立看门狗：初始化后需在主循环周期性调用 iwdg_feed()。 */
+#if (BSP_ENABLE_IWDG != 0U)
+  status = bsp_collect(status, iwdg_init(IWDG_DEFAULT_TIMEOUT_MS));
+#endif
+
   return status;
 }

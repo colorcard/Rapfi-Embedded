@@ -3,12 +3,16 @@
 
 #include <stdint.h>
 
+#include "zf_common_bsp_config.h"
+#include "zf_driver_spi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define LCD_HW_WIDTH  240U
-#define LCD_HW_HEIGHT 280U
+#define LCD_HW_WIDTH LCD_WIDTH
+#define LCD_HW_HEIGHT LCD_HEIGHT
+#define LCD_SPI_INDEX SPI_1
 
 /**
  * @brief 初始化 ST7789 控制器并开启 LCD 背光

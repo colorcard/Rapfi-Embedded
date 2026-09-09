@@ -74,6 +74,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${HAL_DIR}/stm32g4xx_hal_fdcan.c
     ${HAL_DIR}/stm32g4xx_hal_i2c.c
     ${HAL_DIR}/stm32g4xx_hal_i2c_ex.c
+    ${HAL_DIR}/stm32g4xx_hal_iwdg.c
     ${HAL_DIR}/stm32g4xx_hal_spi.c
     ${HAL_DIR}/stm32g4xx_hal_spi_ex.c
     ${HAL_DIR}/stm32g4xx_hal_tim.c
@@ -86,6 +87,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_clock.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_debug.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_delay.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_fault.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_fifo.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_interrupt.c
 
@@ -100,6 +102,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_spi.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_timer.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_uart.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_watchdog.c
 
     # 外接设备驱动层
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_buzzer.c

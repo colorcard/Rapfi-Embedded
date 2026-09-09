@@ -53,4 +53,38 @@
 #define PIT_IRQ_PREEMPT_PRIORITY 0U  /* TODO: 按整机实时性统一规划。 */
 #define PIT_IRQ_SUB_PRIORITY     0U  /* TODO: 按整机实时性统一规划。 */
 
+/* ----------------------------- 看门狗 --------------------------------- */
+#define IWDG_DEFAULT_TIMEOUT_MS  1000U /* 独立看门狗默认超时，单位 ms。 */
+
+/* --------------------------- 模块使能开关 --------------------------- */
+#define BSP_ENABLE_LED      1U /* PA0 */
+#define BSP_ENABLE_KEY      1U /* PA4~PA7 */
+#define BSP_ENABLE_BUZZER   0U
+#define BSP_ENABLE_UART1    0U
+#define BSP_ENABLE_UART2    0U
+#define BSP_ENABLE_UART3    0U
+#define BSP_ENABLE_I2C2     0U
+#define BSP_ENABLE_I2C4     0U
+#define BSP_ENABLE_SPI1     1U /* LCD 依赖 */
+#define BSP_ENABLE_CAN2     0U
+#define BSP_ENABLE_ADC4     0U
+#define BSP_ENABLE_PIT      1U
+#if defined(DEBUG)
+#define BSP_ENABLE_IWDG     0U /* 调试时关闭，避免断点触发复位 */
+#else
+#define BSP_ENABLE_IWDG     1U
+#endif
+
+/* ------------------------------- LCD ---------------------------------- */
+#define LCD_WIDTH           240U
+#define LCD_HEIGHT          280U
+#define LCD_X_OFFSET        0U
+#define LCD_Y_OFFSET        20U
+#define LCD_TIMEOUT_MS      1000U
+#define LCD_CS_PORT         GPIOD
+#define LCD_CS_PIN          GPIO_PIN_11
+#define LCD_DC_PIN          GPIO_PIN_12
+#define LCD_BL_PIN          GPIO_PIN_13
+#define LCD_BL_ACTIVE_HIGH  1U /* 背光高电平点亮 */
+
 #endif /* _zf_common_bsp_config_h_ */

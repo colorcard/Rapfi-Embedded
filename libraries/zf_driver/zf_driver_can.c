@@ -156,6 +156,7 @@ zf_status_t can_init(can_index_enum bus, const can_cfg_t *cfg)
   uint32_t seg1;
   uint32_t seg2;
   FDCAN_FilterTypeDef filter = {0};
+  HAL_StatusTypeDef hal_status;
 
   if ((uint32_t)bus >= (uint32_t)CAN_NUM) {
     return ZF_INVALID_PARAM;
@@ -203,8 +204,9 @@ zf_status_t can_init(can_index_enum bus, const can_cfg_t *cfg)
     handle->Init.DataTimeSeg2 = seg2;
   }
 
-  if (HAL_FDCAN_Init(handle) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_FDCAN_Init(handle);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
   /* 标准帧全通滤波器。 */
@@ -214,22 +216,25 @@ zf_status_t can_init(can_index_enum bus, const can_cfg_t *cfg)
   filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
   filter.FilterID1 = 0x00000000U;
   filter.FilterID2 = 0x00000000U;
-  if (HAL_FDCAN_ConfigFilter(handle, &filter) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_FDCAN_ConfigFilter(handle, &filter);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
   /* 扩展帧全通滤波器。 */
   filter.IdType = FDCAN_EXTENDED_ID;
   filter.FilterIndex = 0U;
-  if (HAL_FDCAN_ConfigFilter(handle, &filter) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_FDCAN_ConfigFilter(handle, &filter);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
-  if (HAL_FDCAN_ConfigGlobalFilter(handle, FDCAN_ACCEPT_IN_RX_FIFO0,
-                                   FDCAN_ACCEPT_IN_RX_FIFO0,
-                                   FDCAN_FILTER_REMOTE,
-                                   FDCAN_FILTER_REMOTE) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_FDCAN_ConfigGlobalFilter(handle, FDCAN_ACCEPT_IN_RX_FIFO0,
+                                            FDCAN_ACCEPT_IN_RX_FIFO0,
+                                            FDCAN_FILTER_REMOTE,
+                                            FDCAN_FILTER_REMOTE);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
   return can_start(bus);
@@ -242,10 +247,7 @@ zf_status_t can_start(can_index_enum bus)
   if (handle == NULL) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_FDCAN_Start(handle) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_FDCAN_Start(handle));
 }
 
 zf_status_t can_stop(can_index_enum bus)
@@ -255,10 +257,7 @@ zf_status_t can_stop(can_index_enum bus)
   if (handle == NULL) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_FDCAN_Stop(handle) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_FDCAN_Stop(handle));
 }
 
 zf_status_t can_send(can_index_enum bus, const can_message_t *message,
@@ -269,6 +268,7 @@ zf_status_t can_send(can_index_enum bus, const can_message_t *message,
   uint32_t dlc;
   uint32_t free_before;
   uint32_t start_tick;
+  HAL_StatusTypeDef hal_status;
 
   if ((handle == NULL) || (message == NULL)) {
     return ZF_INVALID_PARAM;
@@ -296,9 +296,10 @@ zf_status_t can_send(can_index_enum bus, const can_message_t *message,
   if (free_before == 0U) {
     return ZF_ERROR;
   }
-  if (HAL_FDCAN_AddMessageToTxFifoQ(handle, &tx_header,
-                                    (uint8_t *)message->data) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_FDCAN_AddMessageToTxFifoQ(handle, &tx_header,
+                                             (uint8_t *)message->data);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
   start_tick = HAL_GetTick();
@@ -316,6 +317,7 @@ zf_status_t can_receive(can_index_enum bus, can_message_t *message,
   FDCAN_HandleTypeDef *handle = can_handle(bus);
   FDCAN_RxHeaderTypeDef rx_header = {0};
   uint32_t start_tick;
+  HAL_StatusTypeDef hal_status;
 
   if ((handle == NULL) || (message == NULL)) {
     return ZF_INVALID_PARAM;
@@ -328,9 +330,10 @@ zf_status_t can_receive(can_index_enum bus, can_message_t *message,
     }
   }
 
-  if (HAL_FDCAN_GetRxMessage(handle, FDCAN_RX_FIFO0, &rx_header,
-                             message->data) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_FDCAN_GetRxMessage(handle, FDCAN_RX_FIFO0, &rx_header,
+                                      message->data);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
   message->id = rx_header.Identifier;

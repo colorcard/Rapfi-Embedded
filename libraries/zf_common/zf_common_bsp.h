@@ -21,6 +21,22 @@ typedef enum {
 } zf_status_t;
 
 /**
+ * @brief 把 HAL 返回状态映射为 BSP 状态。
+ * @param status HAL 状态。
+ * @return HAL_OK -> ZF_OK；HAL_TIMEOUT -> ZF_TIMEOUT；HAL_BUSY/HAL_ERROR -> ZF_ERROR。
+ */
+static inline zf_status_t zf_from_hal(HAL_StatusTypeDef status)
+{
+  switch (status) {
+    case HAL_OK:      return ZF_OK;
+    case HAL_TIMEOUT: return ZF_TIMEOUT;
+    case HAL_BUSY:
+    case HAL_ERROR:
+    default:          return ZF_ERROR;
+  }
+}
+
+/**
  * @brief 初始化板级软件状态。
  * @return 无。
  * @note 必须在 clock_init() 之后调用。本函数是外设初始化的唯一入口：

@@ -4,14 +4,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "zf_common_bsp_config.h"
 #include "zf_device_lcd_fonts.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define LCD_FB_WIDTH   240U
-#define LCD_FB_HEIGHT  280U
+#define LCD_FB_WIDTH LCD_WIDTH
+#define LCD_FB_HEIGHT LCD_HEIGHT
 #define LCD_RGB565(r, g, b) \
   ((uint16_t)((((uint16_t)(r) & 0xF8U) << 8) | \
               (((uint16_t)(g) & 0xFCU) << 3) | ((uint16_t)(b) >> 3)))

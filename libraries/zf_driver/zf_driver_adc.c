@@ -28,6 +28,7 @@ static uint32_t s_resolution_bits = 12U;
 
 zf_status_t adc_init(const adc_cfg_t *cfg)
 {
+  HAL_StatusTypeDef hal_status;
   uint32_t resolution = (cfg != NULL) ? cfg->resolution : ADC_DEFAULT_RESOLUTION;
 
   if ((resolution != ADC_RESOLUTION_12B) && (resolution != ADC_RESOLUTION_10B) &&
@@ -72,19 +73,18 @@ zf_status_t adc_init(const adc_cfg_t *cfg)
   s_adc.Init.DMAContinuousRequests = DISABLE;
   s_adc.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
   s_adc.Init.OversamplingMode = DISABLE;
-  if (HAL_ADC_Init(&s_adc) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_ADC_Init(&s_adc);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
-  if (HAL_ADCEx_Calibration_Start(&s_adc, ADC_SINGLE_ENDED) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_ADCEx_Calibration_Start(&s_adc, ADC_SINGLE_ENDED));
 }
 
 zf_status_t adc_convert(adc_channel_enum channel, uint16_t *raw)
 {
   ADC_ChannelConfTypeDef config = {0};
+  HAL_StatusTypeDef hal_status;
 
   if ((raw == NULL) || ((uint32_t)channel >= (uint32_t)ADC_CH_NUM)) {
     return ZF_INVALID_PARAM;
@@ -96,16 +96,19 @@ zf_status_t adc_convert(adc_channel_enum channel, uint16_t *raw)
   config.SingleDiff = ADC_SINGLE_ENDED;
   config.OffsetNumber = ADC_OFFSET_NONE;
   config.Offset = 0U;
-  if (HAL_ADC_ConfigChannel(&s_adc, &config) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_ADC_ConfigChannel(&s_adc, &config);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
-  if (HAL_ADC_Start(&s_adc) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_ADC_Start(&s_adc);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
-  if (HAL_ADC_PollForConversion(&s_adc, ADC_TIMEOUT_MS) != HAL_OK) {
+  hal_status = HAL_ADC_PollForConversion(&s_adc, ADC_TIMEOUT_MS);
+  if (hal_status != HAL_OK) {
     (void)HAL_ADC_Stop(&s_adc);
-    return ZF_TIMEOUT;
+    return zf_from_hal(hal_status);
   }
   *raw = (uint16_t)HAL_ADC_GetValue(&s_adc);
   (void)HAL_ADC_Stop(&s_adc);

@@ -19,6 +19,9 @@ int main(void)
 
   while (1) {
     menu_process();
+#if (BSP_ENABLE_IWDG != 0U)
+    iwdg_feed();
+#endif
   }
 }
 

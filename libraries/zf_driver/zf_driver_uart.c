@@ -72,6 +72,7 @@ zf_status_t uart_init(uart_index_enum port, const uart_cfg_t *cfg)
 {
   UART_HandleTypeDef *handle;
   USART_TypeDef *instance;
+  HAL_StatusTypeDef hal_status;
 
   if ((uint32_t)port >= (uint32_t)UART_NUM) {
     return ZF_INVALID_PARAM;
@@ -93,15 +94,13 @@ zf_status_t uart_init(uart_index_enum port, const uart_cfg_t *cfg)
   handle->Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
   handle->Init.ClockPrescaler = UART_PRESCALER_DIV1;
   handle->AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(handle) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_UART_Init(handle);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
   fifo_init(&s_rx_fifo[port], s_rx_storage[port], UART_RX_BUFFER_SIZE);
-  if (HAL_UART_Receive_IT(handle, &s_rx_byte[port], 1U) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_UART_Receive_IT(handle, &s_rx_byte[port], 1U));
 }
 
 zf_status_t uart_write_buffer(uart_index_enum port, const uint8_t *data,
@@ -112,10 +111,8 @@ zf_status_t uart_write_buffer(uart_index_enum port, const uint8_t *data,
   if ((handle == NULL) || (data == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_UART_Transmit(handle, (uint8_t *)data, length, timeout_ms) != HAL_OK) {
-    return ZF_TIMEOUT;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_UART_Transmit(handle, (uint8_t *)data, length,
+                                       timeout_ms));
 }
 
 zf_status_t uart_write_string(uart_index_enum port, const char *string,

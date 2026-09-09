@@ -1,4 +1,5 @@
 #include "zf_common_headfile.h"
+#include "zf_common_fault.h"
 #include "menu_core.h"
 
 /******************************************************************************/
@@ -11,28 +12,64 @@ void NMI_Handler(void)
   }
 }
 
-void HardFault_Handler(void)
+/**
+ * @brief 故障统一 C 处理入口。
+ * @param stack_frame 异常压栈的栈帧首地址（r0,r1,r2,r3,r12,lr,pc,xpsr）。
+ * @param exc_return 进入异常时的 LR（EXC_RETURN）。
+ * @return 无，捕获现场后停在 while (1) 中等待看门狗复位。
+ * @note 由 HardFault/MemManage/BusFault/UsageFault 的 naked 处理函数跳转进入；
+ *       非 static 全局函数以确保内联汇编中的 b 指令可见。
+ */
+void fault_handler_c(uint32_t *stack_frame, uint32_t exc_return)
 {
+  fault_capture(stack_frame, exc_return);
+  fault_hook();
   while (1) {
   }
 }
 
-void MemManage_Handler(void)
+__attribute__((naked)) void HardFault_Handler(void)
 {
-  while (1) {
-  }
+  __asm volatile(
+    "tst lr, #4        \n"
+    "ite eq            \n"
+    "mrseq r0, msp     \n"
+    "mrsne r0, psp     \n"
+    "mov r1, lr        \n"
+    "b fault_handler_c \n");
 }
 
-void BusFault_Handler(void)
+__attribute__((naked)) void MemManage_Handler(void)
 {
-  while (1) {
-  }
+  __asm volatile(
+    "tst lr, #4        \n"
+    "ite eq            \n"
+    "mrseq r0, msp     \n"
+    "mrsne r0, psp     \n"
+    "mov r1, lr        \n"
+    "b fault_handler_c \n");
 }
 
-void UsageFault_Handler(void)
+__attribute__((naked)) void BusFault_Handler(void)
 {
-  while (1) {
-  }
+  __asm volatile(
+    "tst lr, #4        \n"
+    "ite eq            \n"
+    "mrseq r0, msp     \n"
+    "mrsne r0, psp     \n"
+    "mov r1, lr        \n"
+    "b fault_handler_c \n");
+}
+
+__attribute__((naked)) void UsageFault_Handler(void)
+{
+  __asm volatile(
+    "tst lr, #4        \n"
+    "ite eq            \n"
+    "mrseq r0, msp     \n"
+    "mrsne r0, psp     \n"
+    "mov r1, lr        \n"
+    "b fault_handler_c \n");
 }
 
 void SVC_Handler(void)

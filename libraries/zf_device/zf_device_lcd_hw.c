@@ -1,16 +1,20 @@
 #include "zf_device_lcd_hw.h"
 
+#include "zf_common_bsp_config.h"
 #include "zf_driver_gpio.h"
 #include "zf_driver_spi.h"
 
-#define LCD_CS_PORT GPIO_PORT_D_BASE
-#define LCD_CS_PIN  GPIO_PIN_11
-#define LCD_DC_PIN  GPIO_PIN_12
-#define LCD_BL_PIN  GPIO_PIN_13
+#if (BSP_ENABLE_SPI1 == 0U)
+#error "LCD requires BSP_ENABLE_SPI1=1 in zf_common_bsp_config.h"
+#endif
 
-#define LCD_X_OFFSET 0U
-#define LCD_Y_OFFSET 20U
-#define LCD_TIMEOUT  1000U
+#if (LCD_BL_ACTIVE_HIGH != 0U)
+#define LCD_BL_ON_LEVEL  GPIO_PIN_SET
+#define LCD_BL_OFF_LEVEL GPIO_PIN_RESET
+#else
+#define LCD_BL_ON_LEVEL  GPIO_PIN_RESET
+#define LCD_BL_OFF_LEVEL GPIO_PIN_SET
+#endif
 
 /**
  * @brief 设置 LCD 片选信号电平
@@ -18,7 +22,7 @@
  */
 static void lcd_cs(GPIO_PinState state)
 {
-  gpio_set_level(GPIOD, LCD_CS_PIN, state);
+  gpio_set_level(LCD_CS_PORT, LCD_CS_PIN, state);
 }
 
 /**
@@ -34,8 +38,8 @@ static HAL_StatusTypeDef lcd_write(uint8_t is_data, const uint8_t *data, uint16_
 
   if (data == NULL || size == 0U) return HAL_ERROR;
   lcd_cs(GPIO_PIN_RESET);
-  gpio_set_level(GPIOD, LCD_DC_PIN, is_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
-  status = (spi_write_8bit_array(SPI_1, data, size, LCD_TIMEOUT) == ZF_OK)
+  gpio_set_level(LCD_CS_PORT, LCD_DC_PIN, is_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
+  status = (spi_write_8bit_array(LCD_SPI_INDEX, data, size, LCD_TIMEOUT_MS) == ZF_OK)
                ? HAL_OK : HAL_ERROR;
   lcd_cs(GPIO_PIN_SET);
   return status;
@@ -103,7 +107,7 @@ int lcd_hw_init(void)
     {0xC6U,0x0FU}
   };
   const gpio_cfg_t gpio_config = {
-    GPIOD, LCD_CS_PIN | LCD_DC_PIN | LCD_BL_PIN, GPIO_MODE_OUTPUT_PP,
+    LCD_CS_PORT, LCD_CS_PIN | LCD_DC_PIN | LCD_BL_PIN, GPIO_MODE_OUTPUT_PP,
     GPIO_NOPULL, GPIO_SPEED_FREQ_HIGH, 0U
   };
   uint32_t i;
@@ -112,8 +116,8 @@ int lcd_hw_init(void)
   gpio_init(&gpio_config);
 
   lcd_cs(GPIO_PIN_SET);
-  gpio_set_level(GPIOD, LCD_DC_PIN, GPIO_PIN_SET);
-  gpio_set_level(GPIOD, LCD_BL_PIN, GPIO_PIN_RESET);
+  gpio_set_level(LCD_CS_PORT, LCD_DC_PIN, GPIO_PIN_SET);
+  gpio_set_level(LCD_CS_PORT, LCD_BL_PIN, LCD_BL_OFF_LEVEL);
 
   for (i = 0U; i < sizeof(single) / sizeof(single[0]); ++i) {
     if (lcd_command(single[i].command, &single[i].value, 1U) != HAL_OK) return -1;
@@ -126,7 +130,7 @@ int lcd_hw_init(void)
       lcd_command(0x11U, NULL, 0U) != HAL_OK) return -1;
   HAL_Delay(120U);
   if (lcd_command(0x29U, NULL, 0U) != HAL_OK) return -1;
-  gpio_set_level(GPIOD, LCD_BL_PIN, GPIO_PIN_SET);
+  gpio_set_level(LCD_CS_PORT, LCD_BL_PIN, LCD_BL_ON_LEVEL);
   return 0;
 }
 

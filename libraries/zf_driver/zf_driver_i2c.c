@@ -151,6 +151,7 @@ zf_status_t i2c_init(i2c_index_enum bus, const i2c_cfg_t *cfg)
   I2C_TypeDef *instance;
   uint32_t speed_hz;
   uint32_t timing;
+  HAL_StatusTypeDef hal_status;
 
   if ((uint32_t)bus >= (uint32_t)I2C_NUM) {
     return ZF_INVALID_PARAM;
@@ -177,8 +178,9 @@ zf_status_t i2c_init(i2c_index_enum bus, const i2c_cfg_t *cfg)
   handle->Init.OwnAddress2Masks = I2C_OA2_NOMASK;
   handle->Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
   handle->Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(handle) != HAL_OK) {
-    return ZF_ERROR;
+  hal_status = HAL_I2C_Init(handle);
+  if (hal_status != HAL_OK) {
+    return zf_from_hal(hal_status);
   }
 
   (void)HAL_I2CEx_ConfigAnalogFilter(handle, I2C_ANALOGFILTER_ENABLE);
@@ -194,11 +196,9 @@ zf_status_t i2c_write(i2c_index_enum bus, uint8_t address,
   if ((handle == NULL) || (data == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_I2C_Master_Transmit(handle, (uint16_t)(address << 1U),
-                              (uint8_t *)data, length, timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_I2C_Master_Transmit(handle, (uint16_t)(address << 1U),
+                                             (uint8_t *)data, length,
+                                             timeout_ms));
 }
 
 zf_status_t i2c_read(i2c_index_enum bus, uint8_t address,
@@ -209,11 +209,8 @@ zf_status_t i2c_read(i2c_index_enum bus, uint8_t address,
   if ((handle == NULL) || (data == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_I2C_Master_Receive(handle, (uint16_t)(address << 1U),
-                             data, length, timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_I2C_Master_Receive(handle, (uint16_t)(address << 1U),
+                                            data, length, timeout_ms));
 }
 
 zf_status_t i2c_mem_write(i2c_index_enum bus, uint8_t address,
@@ -226,12 +223,9 @@ zf_status_t i2c_mem_write(i2c_index_enum bus, uint8_t address,
   if ((handle == NULL) || (data == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_I2C_Mem_Write(handle, (uint16_t)(address << 1U), mem_address,
-                        mem_address_size, (uint8_t *)data, length,
-                        timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_I2C_Mem_Write(handle, (uint16_t)(address << 1U),
+                                       mem_address, mem_address_size,
+                                       (uint8_t *)data, length, timeout_ms));
 }
 
 zf_status_t i2c_mem_read(i2c_index_enum bus, uint8_t address,
@@ -243,11 +237,9 @@ zf_status_t i2c_mem_read(i2c_index_enum bus, uint8_t address,
   if ((handle == NULL) || (data == NULL) || (length == 0U)) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_I2C_Mem_Read(handle, (uint16_t)(address << 1U), mem_address,
-                       mem_address_size, data, length, timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_I2C_Mem_Read(handle, (uint16_t)(address << 1U),
+                                      mem_address, mem_address_size, data,
+                                      length, timeout_ms));
 }
 
 zf_status_t i2c_is_device_ready(i2c_index_enum bus, uint8_t address,
@@ -258,11 +250,8 @@ zf_status_t i2c_is_device_ready(i2c_index_enum bus, uint8_t address,
   if (handle == NULL) {
     return ZF_INVALID_PARAM;
   }
-  if (HAL_I2C_IsDeviceReady(handle, (uint16_t)(address << 1U), trials,
-                            timeout_ms) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_I2C_IsDeviceReady(handle, (uint16_t)(address << 1U),
+                                           trials, timeout_ms));
 }
 
 void HAL_I2C_MspInit(I2C_HandleTypeDef *i2cHandle)

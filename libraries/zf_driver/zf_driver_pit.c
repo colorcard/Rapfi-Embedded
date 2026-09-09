@@ -36,8 +36,5 @@ zf_status_t pit_init(uint32_t period_ms)
   __HAL_TIM_SET_PRESCALER(htim, prescaler);
   __HAL_TIM_SET_AUTORELOAD(htim, period - 1U);
   __HAL_TIM_SET_COUNTER(htim, 0U);
-  if (HAL_TIM_Base_Start_IT(htim) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_TIM_Base_Start_IT(htim));
 }

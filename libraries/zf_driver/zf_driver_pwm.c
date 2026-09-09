@@ -177,10 +177,7 @@ zf_status_t pwm_start(pwm_channel_enum channel)
     return ZF_INVALID_PARAM;
   }
   hw = &s_pwm[channel];
-  if (HAL_TIM_PWM_Start(timer_get_handle(hw->timer), hw->channel) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_TIM_PWM_Start(timer_get_handle(hw->timer), hw->channel));
 }
 
 zf_status_t pwm_stop(pwm_channel_enum channel)
@@ -191,8 +188,5 @@ zf_status_t pwm_stop(pwm_channel_enum channel)
     return ZF_INVALID_PARAM;
   }
   hw = &s_pwm[channel];
-  if (HAL_TIM_PWM_Stop(timer_get_handle(hw->timer), hw->channel) != HAL_OK) {
-    return ZF_ERROR;
-  }
-  return ZF_OK;
+  return zf_from_hal(HAL_TIM_PWM_Stop(timer_get_handle(hw->timer), hw->channel));
 }
