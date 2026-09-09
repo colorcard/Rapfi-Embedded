@@ -19,7 +19,7 @@ typedef enum {
 /**
  * @brief 初始化按键状态。
  * @return 无。
- * @note 引脚复用与上拉配置由 CubeMX 的 MX_GPIO_Init() 完成。
+ * @note 本函数负责把 PA4~PA7 配置为输入。
  */
 void key_init(void);
 

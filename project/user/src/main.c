@@ -10,7 +10,9 @@ int main(void)
 {
   HAL_Init();
   clock_init();
-  bsp_init();
+  if (bsp_init() != ZF_OK) {
+    error_handler();
+  }
 
   lcd_init(LCD_DIRECTION_LANDSCAPE);
   menu_init(50U);

@@ -1,5 +1,6 @@
 #include "zf_device_lcd_hw.h"
 
+#include "zf_driver_gpio.h"
 #include "zf_driver_spi.h"
 
 #define LCD_CS_PORT GPIO_PORT_D_BASE
@@ -17,7 +18,7 @@
  */
 static void lcd_cs(GPIO_PinState state)
 {
-  HAL_GPIO_WritePin(GPIOD, LCD_CS_PIN, state);
+  gpio_set_level(GPIOD, LCD_CS_PIN, state);
 }
 
 /**
@@ -33,7 +34,7 @@ static HAL_StatusTypeDef lcd_write(uint8_t is_data, const uint8_t *data, uint16_
 
   if (data == NULL || size == 0U) return HAL_ERROR;
   lcd_cs(GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(GPIOD, LCD_DC_PIN, is_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
+  gpio_set_level(GPIOD, LCD_DC_PIN, is_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
   status = (spi_write_8bit_array(SPI_1, data, size, LCD_TIMEOUT) == ZF_OK)
                ? HAL_OK : HAL_ERROR;
   lcd_cs(GPIO_PIN_SET);
@@ -101,20 +102,18 @@ int lcd_hw_init(void)
     {0xC0U,0x2CU}, {0xC2U,0x01U}, {0xC3U,0x12U}, {0xC4U,0x20U},
     {0xC6U,0x0FU}
   };
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  const gpio_cfg_t gpio_config = {
+    GPIOD, LCD_CS_PIN | LCD_DC_PIN | LCD_BL_PIN, GPIO_MODE_OUTPUT_PP,
+    GPIO_NOPULL, GPIO_SPEED_FREQ_HIGH, 0U
+  };
   uint32_t i;
 
   /* PD11/PD12/PD13：LCD 片选、数据/命令、背光控制。 */
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-  GPIO_InitStruct.Pin = LCD_CS_PIN | LCD_DC_PIN | LCD_BL_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+  gpio_init(&gpio_config);
 
   lcd_cs(GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOD, LCD_DC_PIN, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(GPIOD, LCD_BL_PIN, GPIO_PIN_RESET);
+  gpio_set_level(GPIOD, LCD_DC_PIN, GPIO_PIN_SET);
+  gpio_set_level(GPIOD, LCD_BL_PIN, GPIO_PIN_RESET);
 
   for (i = 0U; i < sizeof(single) / sizeof(single[0]); ++i) {
     if (lcd_command(single[i].command, &single[i].value, 1U) != HAL_OK) return -1;
@@ -127,7 +126,7 @@ int lcd_hw_init(void)
       lcd_command(0x11U, NULL, 0U) != HAL_OK) return -1;
   HAL_Delay(120U);
   if (lcd_command(0x29U, NULL, 0U) != HAL_OK) return -1;
-  HAL_GPIO_WritePin(GPIOD, LCD_BL_PIN, GPIO_PIN_SET);
+  gpio_set_level(GPIOD, LCD_BL_PIN, GPIO_PIN_SET);
   return 0;
 }
 
@@ -143,7 +142,8 @@ int lcd_hw_init(void)
 int lcd_hw_write_area_rgb565(uint16_t x, uint16_t y, uint16_t width,
                            uint16_t height, const uint16_t *pixels)
 {
-  uint8_t row_data[LCD_HW_WIDTH * 2U];
+  /* 行缓冲放在静态区，避免占用主循环栈空间。 */
+  static uint8_t row_data[LCD_HW_WIDTH * 2U];
   uint16_t row;
   uint16_t column;
 

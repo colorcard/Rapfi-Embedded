@@ -9,12 +9,16 @@
 #include "zf_common_bsp_config.h"
 #include "zf_common_bsp.h"
 #include "zf_common_clock.h"
+#include "zf_common_debug.h"
 #include "zf_common_delay.h"
+#include "zf_common_fifo.h"
+#include "zf_common_interrupt.h"
 
 /* ====================== 芯片外设驱动层 ====================== */
 #include "zf_driver_adc.h"
 #include "zf_driver_can.h"
 #include "zf_driver_encoder.h"
+#include "zf_driver_gpio.h"
 #include "zf_driver_i2c.h"
 #include "zf_driver_pit.h"
 #include "zf_driver_pwm.h"

@@ -25,7 +25,7 @@ typedef struct {
  * @param bus I2C 逻辑编号。
  * @param cfg 配置参数；传 NULL 使用 bsp_config.h 默认值（400 kHz）。
  * @return ZF_OK 表示成功，其他值表示失败。
- * @note CubeMX 生成的 TIMINGR 是固定占位值，本函数会根据 PCLK1 重新计算。
+ * @note TIMINGR 由本函数根据 PCLK1 与目标速率实时计算。
  */
 zf_status_t i2c_init(i2c_index_enum bus, const i2c_cfg_t *cfg);
 

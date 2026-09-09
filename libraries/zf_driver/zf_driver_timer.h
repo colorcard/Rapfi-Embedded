@@ -25,6 +25,14 @@ typedef enum {
 TIM_HandleTypeDef *timer_get_handle(timer_index_enum index);
 
 /**
+ * @brief 获取定时器计数时钟频率。
+ * @param instance 定时器实例。
+ * @return 计数时钟频率，单位 Hz。
+ * @note APB 预分频不为 1 时，定时器时钟为对应 PCLK 的 2 倍。
+ */
+uint32_t timer_clock_hz(TIM_TypeDef *instance);
+
+/**
  * @brief 完成定时器时钟、引脚复用与默认配置初始化。
  * @param index 定时器逻辑编号。
  * @return ZF_OK 表示成功，其他值表示失败。

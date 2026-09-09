@@ -16,7 +16,7 @@ typedef enum {
 /**
  * @brief 初始化 LED 并保持熄灭。
  * @return 无。
- * @note 引脚复用由 CubeMX 的 MX_GPIO_Init() 完成。
+ * @note 本函数负责把 PA0 配置为推挽输出。
  */
 void led_init(void);
 

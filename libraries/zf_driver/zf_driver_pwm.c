@@ -34,27 +34,6 @@ static const pwm_hw_t s_pwm[PWM_NUM] = {
 static bool s_timer_ready[TIMER_NUM];
 
 /**
- * @brief 获取定时器计数时钟频率。
- * @param instance 定时器实例。
- * @return 计数时钟频率，单位 Hz。
- * @note APB 预分频不为 1 时，定时器时钟为 PCLK 的 2 倍。
- */
-static uint32_t pwm_timer_clock(TIM_TypeDef *instance)
-{
-  uint32_t pclk;
-  uint32_t ppre;
-
-  if (instance == TIM1) {
-    pclk = HAL_RCC_GetPCLK2Freq();
-    ppre = (RCC->CFGR & RCC_CFGR_PPRE2) >> RCC_CFGR_PPRE2_Pos;
-  } else {
-    pclk = HAL_RCC_GetPCLK1Freq();
-    ppre = (RCC->CFGR & RCC_CFGR_PPRE1) >> RCC_CFGR_PPRE1_Pos;
-  }
-  return (ppre == 0U) ? pclk : (pclk * 2U);
-}
-
-/**
  * @brief 确保通道所属定时器已经完成初始化。
  * @param channel PWM 通道。
  * @return ZF_OK 表示成功，其他值表示失败。
@@ -105,12 +84,12 @@ zf_status_t pwm_set_frequency(pwm_channel_enum channel, uint32_t frequency_hz)
   uint32_t prescaler;
   uint64_t period = 0U;
 
-  if (((uint32_t)channel >= (uint32_t)PWM_NUM) || (frequency_hz == 0U)) {
+  if ((pwm_ensure_timer(channel) != ZF_OK) || (frequency_hz == 0U)) {
     return ZF_INVALID_PARAM;
   }
   hw = &s_pwm[channel];
   htim = timer_get_handle(hw->timer);
-  timer_clock = pwm_timer_clock(htim->Instance);
+  timer_clock = timer_clock_hz(htim->Instance);
 
   for (prescaler = 0U; prescaler <= 0xFFFFU; ++prescaler) {
     period = (uint64_t)timer_clock / ((uint64_t)(prescaler + 1U) * frequency_hz);
@@ -130,12 +109,19 @@ zf_status_t pwm_set_frequency(pwm_channel_enum channel, uint32_t frequency_hz)
 zf_status_t pwm_set_pulse(pwm_channel_enum channel, uint32_t pulse)
 {
   const pwm_hw_t *hw;
+  TIM_HandleTypeDef *htim;
+  uint32_t autoreload;
 
-  if ((uint32_t)channel >= (uint32_t)PWM_NUM) {
+  if (pwm_ensure_timer(channel) != ZF_OK) {
     return ZF_INVALID_PARAM;
   }
   hw = &s_pwm[channel];
-  __HAL_TIM_SET_COMPARE(timer_get_handle(hw->timer), hw->channel, pulse);
+  htim = timer_get_handle(hw->timer);
+  autoreload = __HAL_TIM_GET_AUTORELOAD(htim);
+  if (pulse > autoreload) {
+    pulse = autoreload;
+  }
+  __HAL_TIM_SET_COMPARE(htim, hw->channel, pulse);
   return ZF_OK;
 }
 
@@ -146,7 +132,7 @@ zf_status_t pwm_set_duty(pwm_channel_enum channel, uint32_t duty_permille)
   uint32_t period;
   uint32_t pulse;
 
-  if (((uint32_t)channel >= (uint32_t)PWM_NUM) || (duty_permille > 1000U)) {
+  if ((pwm_ensure_timer(channel) != ZF_OK) || (duty_permille > 1000U)) {
     return ZF_INVALID_PARAM;
   }
   hw = &s_pwm[channel];
@@ -166,15 +152,18 @@ zf_status_t pwm_set_pulse_us(pwm_channel_enum channel, uint32_t pulse_us)
   uint64_t tick_hz;
   uint32_t pulse;
 
-  if ((uint32_t)channel >= (uint32_t)PWM_NUM) {
+  if (pwm_ensure_timer(channel) != ZF_OK) {
     return ZF_INVALID_PARAM;
   }
   hw = &s_pwm[channel];
   htim = timer_get_handle(hw->timer);
-  timer_clock = pwm_timer_clock(htim->Instance);
+  timer_clock = timer_clock_hz(htim->Instance);
   prescaler = htim->Instance->PSC;
   tick_hz = (uint64_t)timer_clock / (uint64_t)(prescaler + 1U);
   pulse = (uint32_t)(((uint64_t)pulse_us * tick_hz) / 1000000ULL);
+  if (pulse > __HAL_TIM_GET_AUTORELOAD(htim)) {
+    pulse = __HAL_TIM_GET_AUTORELOAD(htim);
+  }
 
   __HAL_TIM_SET_COMPARE(htim, hw->channel, pulse);
   return ZF_OK;
@@ -198,7 +187,7 @@ zf_status_t pwm_stop(pwm_channel_enum channel)
 {
   const pwm_hw_t *hw;
 
-  if ((uint32_t)channel >= (uint32_t)PWM_NUM) {
+  if (pwm_ensure_timer(channel) != ZF_OK) {
     return ZF_INVALID_PARAM;
   }
   hw = &s_pwm[channel];

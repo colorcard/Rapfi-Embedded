@@ -26,23 +26,54 @@ void error_handler(void)
   }
 }
 
-void bsp_init(void)
+zf_status_t bsp_init(void)
 {
+  zf_status_t status = ZF_OK;
+  zf_status_t result;
+
   /* 板级设备：配置各自的引脚并设置初始状态。 */
   led_init();
   key_init();
   buzzer_init();
 
   /* 外设驱动：完成时钟、GPIO 复用、外设参数初始化。 */
-  (void)uart_init(UART_1, NULL);
-  (void)uart_init(UART_2, NULL);
-  (void)uart_init(UART_3, NULL);
-  (void)i2c_init(I2C_2, NULL);
-  (void)i2c_init(I2C_4, NULL);
-  (void)spi_init(SPI_1, NULL);
-  (void)can_init(CAN_2, NULL);
-  (void)adc_init(NULL);
+  result = uart_init(UART_1, NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  result = uart_init(UART_2, NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  result = uart_init(UART_3, NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  result = i2c_init(I2C_2, NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  result = i2c_init(I2C_4, NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  result = spi_init(SPI_1, NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  result = can_init(CAN_2, NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  result = adc_init(NULL);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
 
-  /* 10 ms 周期中断，用于按键扫描。 */
-  (void)pit_init(10U);
+  /* 周期中断，用于按键扫描。 */
+  result = pit_init(PIT_DEFAULT_PERIOD_MS);
+  if ((result != ZF_OK) && (status == ZF_OK)) {
+    status = result;
+  }
+  return status;
 }

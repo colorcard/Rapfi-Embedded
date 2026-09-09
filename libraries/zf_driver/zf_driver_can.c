@@ -2,9 +2,6 @@
 
 #include "zf_common_bsp_config.h"
 
-/** @brief FDCAN2 的 TX FIFO 深度。 */
-#define CAN_TX_FIFO_DEPTH 3U
-
 /** @brief CAN 句柄，由本模块统一持有。 */
 static FDCAN_HandleTypeDef s_can[CAN_NUM];
 
@@ -188,7 +185,7 @@ zf_status_t can_init(can_index_enum bus, const can_cfg_t *cfg)
   handle->Init.TransmitPause = ENABLE;
   handle->Init.ProtocolException = DISABLE;
   handle->Init.NominalPrescaler = prescaler;
-  handle->Init.NominalSyncJumpWidth = seg2;
+  handle->Init.NominalSyncJumpWidth = (seg2 > 16U) ? 16U : seg2;
   handle->Init.NominalTimeSeg1 = seg1;
   handle->Init.NominalTimeSeg2 = seg2;
   handle->Init.StdFiltersNbr = 1U;
@@ -201,7 +198,7 @@ zf_status_t can_init(can_index_enum bus, const can_cfg_t *cfg)
       return ZF_INVALID_PARAM;
     }
     handle->Init.DataPrescaler = prescaler;
-    handle->Init.DataSyncJumpWidth = seg2;
+    handle->Init.DataSyncJumpWidth = (seg2 > 16U) ? 16U : seg2;
     handle->Init.DataTimeSeg1 = seg1;
     handle->Init.DataTimeSeg2 = seg2;
   }
@@ -270,6 +267,7 @@ zf_status_t can_send(can_index_enum bus, const can_message_t *message,
   FDCAN_HandleTypeDef *handle = can_handle(bus);
   FDCAN_TxHeaderTypeDef tx_header = {0};
   uint32_t dlc;
+  uint32_t free_before;
   uint32_t start_tick;
 
   if ((handle == NULL) || (message == NULL)) {
@@ -293,13 +291,18 @@ zf_status_t can_send(can_index_enum bus, const can_message_t *message,
   tx_header.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
   tx_header.MessageMarker = 0U;
 
+  /* 记录入队前的空闲槽位，本帧发送完成后空闲槽位会恢复到该值。 */
+  free_before = HAL_FDCAN_GetTxFifoFreeLevel(handle);
+  if (free_before == 0U) {
+    return ZF_ERROR;
+  }
   if (HAL_FDCAN_AddMessageToTxFifoQ(handle, &tx_header,
                                     (uint8_t *)message->data) != HAL_OK) {
     return ZF_ERROR;
   }
 
   start_tick = HAL_GetTick();
-  while (HAL_FDCAN_GetTxFifoFreeLevel(handle) < CAN_TX_FIFO_DEPTH) {
+  while (HAL_FDCAN_GetTxFifoFreeLevel(handle) < free_before) {
     if ((HAL_GetTick() - start_tick) >= timeout_ms) {
       return ZF_TIMEOUT;
     }

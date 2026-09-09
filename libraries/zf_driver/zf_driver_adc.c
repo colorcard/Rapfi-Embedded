@@ -30,6 +30,14 @@ zf_status_t adc_init(const adc_cfg_t *cfg)
 {
   uint32_t resolution = (cfg != NULL) ? cfg->resolution : ADC_DEFAULT_RESOLUTION;
 
+  if ((resolution != ADC_RESOLUTION_12B) && (resolution != ADC_RESOLUTION_10B) &&
+      (resolution != ADC_RESOLUTION_8B) && (resolution != ADC_RESOLUTION_6B)) {
+    return ZF_INVALID_PARAM;
+  }
+  if ((cfg != NULL) && ((cfg->sampling_time == 0U) || (cfg->vref_mv == 0U))) {
+    return ZF_INVALID_PARAM;
+  }
+
   switch (resolution) {
     case ADC_RESOLUTION_10B:
       s_resolution_bits = 10U;

@@ -129,11 +129,9 @@ static uint32_t i2c_compute_timing(uint32_t clock_hz, uint32_t speed_hz)
       if (sdadel > 0U) {
         sdadel -= 1U;
       }
-      if (scldel > 15U) {
-        scldel = 15U;
-      }
-      if (sdadel > 15U) {
-        sdadel = 15U;
+      if ((scldel > 15U) || (sdadel > 15U)) {
+        /* 该预分频无法满足 t_SU;DAT / t_HD;DAT 最小值，换下一个预分频。 */
+        continue;
       }
       best_error = error;
       best_timing = ((uint32_t)presc << 28U)

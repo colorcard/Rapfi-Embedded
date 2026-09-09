@@ -1,6 +1,7 @@
 #include "zf_device_led.h"
 
 #include "zf_common_bsp_config.h"
+#include "zf_driver_gpio.h"
 
 /** @brief LED 的端口与引脚映射。 */
 typedef struct {
@@ -31,20 +32,16 @@ static void led_write(led_index_enum led, uint8_t on)
 #else
   state = (on != 0U) ? GPIO_PIN_RESET : GPIO_PIN_SET;
 #endif
-  HAL_GPIO_WritePin(s_leds[led].port, s_leds[led].pin, state);
+  gpio_set_level(s_leds[led].port, s_leds[led].pin, state);
 }
 
 void led_init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  const gpio_cfg_t config = {
+    GPIOA, GPIO_PIN_0, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0U
+  };
 
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
+  gpio_init(&config);
   led_write(LED_STATUS, 0U);
 }
 
@@ -63,5 +60,5 @@ void led_toggle(led_index_enum led)
   if ((uint32_t)led >= (uint32_t)LED_NUM) {
     return;
   }
-  HAL_GPIO_TogglePin(s_leds[led].port, s_leds[led].pin);
+  gpio_toggle_level(s_leds[led].port, s_leds[led].pin);
 }

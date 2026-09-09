@@ -26,7 +26,7 @@ typedef enum {
  * @note 必须在 clock_init() 之后调用。本函数是外设初始化的唯一入口：
  *       依次完成板级设备引脚配置、外设时钟/复用/参数初始化与周期中断启动。
  */
-void bsp_init(void);
+zf_status_t bsp_init(void);
 
 /**
  * @brief 致命错误处理：关闭中断并停在此处。

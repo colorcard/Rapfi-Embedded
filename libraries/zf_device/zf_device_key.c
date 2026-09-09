@@ -1,6 +1,7 @@
 #include "zf_device_key.h"
 
 #include "zf_common_bsp_config.h"
+#include "zf_driver_gpio.h"
 
 /** @brief 按键的端口与引脚映射。 */
 typedef struct {
@@ -18,13 +19,12 @@ static const key_hw_t s_keys[KEY_NUM] = {
 
 void key_init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  const gpio_cfg_t config = {
+    GPIOA, GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7,
+    GPIO_MODE_INPUT, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW, 0U
+  };
 
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitStruct.Pin = GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  gpio_init(&config);
 }
 
 bool key_is_pressed(key_index_enum key)
@@ -34,7 +34,7 @@ bool key_is_pressed(key_index_enum key)
   if ((uint32_t)key >= (uint32_t)KEY_NUM) {
     return false;
   }
-  state = HAL_GPIO_ReadPin(s_keys[key].port, s_keys[key].pin);
+  state = gpio_get_level(s_keys[key].port, s_keys[key].pin);
 #if (KEY_ACTIVE_LOW != 0U)
   return (state == GPIO_PIN_RESET) ? true : false;
 #else

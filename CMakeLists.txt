@@ -83,12 +83,16 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # 公共层
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_bsp.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_clock.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_debug.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_delay.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_fifo.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_interrupt.c
 
     # 芯片外设驱动层
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_adc.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_can.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_encoder.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_gpio.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_i2c.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_pit.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_pwm.c

@@ -17,7 +17,7 @@ zf_status_t pit_init(uint32_t period_ms)
     return ZF_INVALID_PARAM;
   }
   htim = timer_get_handle(TIMER_17);
-  timer_clock = HAL_RCC_GetPCLK2Freq(); /* TIM17 位于 APB2，预分频为 1。 */
+  timer_clock = timer_clock_hz(htim->Instance);
   ticks = ((uint64_t)timer_clock * period_ms) / 1000ULL;
   if (ticks == 0U) {
     return ZF_INVALID_PARAM;

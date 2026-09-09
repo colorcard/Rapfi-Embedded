@@ -1,5 +1,7 @@
 #include "zf_driver_timer.h"
 
+#include "zf_common_bsp_config.h"
+
 /** @brief PWM 引脚复用配置，由 HAL_TIM_PWM_Init() 回调。 */
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *timHandle);
 
@@ -21,6 +23,22 @@ TIM_HandleTypeDef *timer_get_handle(timer_index_enum index)
     return NULL;
   }
   return &s_timer[index];
+}
+
+uint32_t timer_clock_hz(TIM_TypeDef *instance)
+{
+  uint32_t pclk;
+  uint32_t ppre;
+
+  if ((instance == TIM1) || (instance == TIM15) ||
+      (instance == TIM16) || (instance == TIM17)) {
+    pclk = HAL_RCC_GetPCLK2Freq();
+    ppre = (RCC->CFGR & RCC_CFGR_PPRE2) >> RCC_CFGR_PPRE2_Pos;
+  } else {
+    pclk = HAL_RCC_GetPCLK1Freq();
+    ppre = (RCC->CFGR & RCC_CFGR_PPRE1) >> RCC_CFGR_PPRE1_Pos;
+  }
+  return (ppre == 0U) ? pclk : (pclk * 2U);
 }
 
 /**
@@ -211,7 +229,8 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *tim_baseHandle)
     __HAL_RCC_TIM4_CLK_ENABLE();
   } else if (tim_baseHandle->Instance == TIM17) {
     __HAL_RCC_TIM17_CLK_ENABLE();
-    HAL_NVIC_SetPriority(TIM1_TRG_COM_TIM17_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(TIM1_TRG_COM_TIM17_IRQn, PIT_IRQ_PREEMPT_PRIORITY,
+                         PIT_IRQ_SUB_PRIORITY);
     HAL_NVIC_EnableIRQ(TIM1_TRG_COM_TIM17_IRQn);
   }
 }

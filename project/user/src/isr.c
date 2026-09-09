@@ -62,8 +62,15 @@ void SysTick_Handler(void)
  */
 void TIM1_TRG_COM_TIM17_IRQHandler(void)
 {
-  HAL_TIM_IRQHandler(timer_get_handle(TIMER_1));
-  HAL_TIM_IRQHandler(timer_get_handle(TIMER_17));
+  TIM_HandleTypeDef *tim1 = timer_get_handle(TIMER_1);
+  TIM_HandleTypeDef *tim17 = timer_get_handle(TIMER_17);
+
+  if ((tim1 != NULL) && (tim1->Instance != NULL)) {
+    HAL_TIM_IRQHandler(tim1);
+  }
+  if ((tim17 != NULL) && (tim17->Instance != NULL)) {
+    HAL_TIM_IRQHandler(tim17);
+  }
 }
 
 /**
@@ -76,4 +83,31 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim == timer_get_handle(TIMER_17)) {
     menu_key_scan();
   }
+}
+
+/**
+ * @brief USART1 全局中断，用于接收缓冲。
+ * @return 无。
+ */
+void USART1_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(uart_get_handle(UART_1));
+}
+
+/**
+ * @brief USART2 全局中断，用于接收缓冲。
+ * @return 无。
+ */
+void USART2_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(uart_get_handle(UART_2));
+}
+
+/**
+ * @brief USART3 全局中断，用于接收缓冲。
+ * @return 无。
+ */
+void USART3_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(uart_get_handle(UART_3));
 }

@@ -1,6 +1,7 @@
 #include "zf_device_buzzer.h"
 
 #include "zf_common_bsp_config.h"
+#include "zf_driver_gpio.h"
 
 #define BUZZER_PORT GPIOA
 #define BUZZER_PIN  GPIO_PIN_1
@@ -19,20 +20,17 @@ static void buzzer_write(uint8_t on)
 #else
   state = (on != 0U) ? GPIO_PIN_RESET : GPIO_PIN_SET;
 #endif
-  HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, state);
+  gpio_set_level(BUZZER_PORT, BUZZER_PIN, state);
 }
 
 void buzzer_init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  const gpio_cfg_t config = {
+    BUZZER_PORT, BUZZER_PIN, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL,
+    GPIO_SPEED_FREQ_LOW, 0U
+  };
 
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitStruct.Pin = BUZZER_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(BUZZER_PORT, &GPIO_InitStruct);
-
+  gpio_init(&config);
   buzzer_write(0U);
 }
 

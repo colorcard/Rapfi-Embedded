@@ -21,7 +21,10 @@
 #define BUZZER_ACTIVE_HIGH      1U /* TODO: 确认晶体管驱动极性。 */
 
 /* ------------------------------- UART --------------------------------- */
-#define UART_DEFAULT_BAUDRATE   115200U /* TODO: 按应用确认波特率。 */
+#define UART_DEFAULT_BAUDRATE    115200U /* TODO: 按应用确认波特率。 */
+#define UART_RX_BUFFER_SIZE      128U    /* 每路 UART 接收环形缓冲大小。 */
+#define UART_IRQ_PREEMPT_PRIORITY 1U     /* TODO: 按整机实时性统一规划。 */
+#define UART_IRQ_SUB_PRIORITY    0U      /* TODO: 按整机实时性统一规划。 */
 
 /* ------------------------------- I2C ---------------------------------- */
 #define I2C_DEFAULT_SPEED_HZ    400000U /* TODO: 按器件确认 100k/400k。 */
@@ -44,5 +47,10 @@
 
 /* ------------------------------- PWM ---------------------------------- */
 #define PWM_DEFAULT_FREQUENCY_HZ 1000U /* TODO: 按电机/舵机确认，舵机常用 50 Hz。 */
+
+/* ------------------------------- PIT ---------------------------------- */
+#define PIT_DEFAULT_PERIOD_MS    10U /* 按键扫描周期，单位 ms。 */
+#define PIT_IRQ_PREEMPT_PRIORITY 0U  /* TODO: 按整机实时性统一规划。 */
+#define PIT_IRQ_SUB_PRIORITY     0U  /* TODO: 按整机实时性统一规划。 */
 
 #endif /* _zf_common_bsp_config_h_ */
