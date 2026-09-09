@@ -9,7 +9,8 @@ cmake_minimum_required(VERSION 3.22)
 #   libraries/zf_common 公共层（时钟、延时、BSP 入口、中断）
 #   libraries/zf_driver 芯片外设驱动层
 #   libraries/zf_device 外接设备驱动层
-#   project/user        应用层
+#   project/user        框架入口（main / isr）
+#   project/code        用户业务代码
 #
 
 # Setup compiler settings
@@ -112,13 +113,15 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_nrf24l01.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_servo.c
 
-    # 应用层
+    # 框架入口
     ${CMAKE_SOURCE_DIR}/project/user/src/main.c
     ${CMAKE_SOURCE_DIR}/project/user/src/isr.c
-    ${CMAKE_SOURCE_DIR}/project/user/src/menu_core.c
-    ${CMAKE_SOURCE_DIR}/project/user/src/menu_key.c
-    ${CMAKE_SOURCE_DIR}/project/user/src/menu_user.c
-    ${CMAKE_SOURCE_DIR}/project/user/src/menu_view.c
+
+    # 用户业务代码
+    ${CMAKE_SOURCE_DIR}/project/code/menu_core.c
+    ${CMAKE_SOURCE_DIR}/project/code/menu_key.c
+    ${CMAKE_SOURCE_DIR}/project/code/menu_user.c
+    ${CMAKE_SOURCE_DIR}/project/code/menu_view.c
 )
 
 # ---------------------------------------------------------------------------
@@ -133,7 +136,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_common
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver
     ${CMAKE_SOURCE_DIR}/libraries/zf_device
-    ${CMAKE_SOURCE_DIR}/project/user/inc
+    ${CMAKE_SOURCE_DIR}/project/code
 )
 
 # ---------------------------------------------------------------------------
