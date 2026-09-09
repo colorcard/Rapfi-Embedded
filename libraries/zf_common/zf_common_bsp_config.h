@@ -43,7 +43,11 @@
 /* ------------------------------- ADC ---------------------------------- */
 #define ADC_DEFAULT_RESOLUTION  ADC_RESOLUTION_12B        /* TODO: 按应用确认。 */
 #define ADC_DEFAULT_SAMPLING    ADC_SAMPLETIME_47CYCLES_5 /* TODO: 按源阻抗确认。 */
-#define ADC_VREF_MV             3300U /* TODO: 确认 VDDA 实际电压。 */
+#define ADC_VREF_MV             2500U /* VREF+ 由内部 VREFBUF 提供，固定 2.5V。 */
+
+/* ---------------------------- 电源电压采样 ---------------------------- */
+#define POWER_VOLTAGE_SCALE_NUM 51U /* PB14/ADC4_IN4 经 OPA2188 5.1 倍缩放，TODO: 按实测校准。 */
+#define POWER_VOLTAGE_SCALE_DEN 10U
 
 /* ------------------------------- PWM ---------------------------------- */
 #define PWM_DEFAULT_FREQUENCY_HZ 1000U /* TODO: 按电机/舵机确认，舵机常用 50 Hz。 */
@@ -67,7 +71,7 @@
 #define BSP_ENABLE_I2C4     0U
 #define BSP_ENABLE_SPI1     1U /* LCD 依赖 */
 #define BSP_ENABLE_CAN2     0U
-#define BSP_ENABLE_ADC4     0U
+#define BSP_ENABLE_ADC4     1U
 #define BSP_ENABLE_PIT      1U
 #define BSP_ENABLE_ENCODER 0U /* TIM2/TIM3 正交编码器 */
 #define BSP_ENABLE_NRF24L01 0U /* PB1 CSN / PB2 CE / SPI1 */

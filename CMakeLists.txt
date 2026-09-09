@@ -114,6 +114,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_user.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_led.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_nrf24l01.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_power.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_servo.c
 
     # 框架入口

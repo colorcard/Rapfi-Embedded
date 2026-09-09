@@ -38,6 +38,7 @@
 #include "zf_device_lcd_user.h"
 #include "zf_device_led.h"
 #include "zf_device_nrf24l01.h"
+#include "zf_device_power.h"
 #include "zf_device_servo.h"
 
 #endif /* _zf_common_headfile_h_ */

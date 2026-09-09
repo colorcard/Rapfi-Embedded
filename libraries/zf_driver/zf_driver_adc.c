@@ -57,6 +57,13 @@ zf_status_t adc_init(const adc_cfg_t *cfg)
   s_sampling_time = (cfg != NULL) ? cfg->sampling_time : ADC_DEFAULT_SAMPLING;
   s_vref_mv = (cfg != NULL) ? cfg->vref_mv : ADC_VREF_MV;
 
+  /* 本板 VREF+ 接内部 VREFBUF 输出，必须先使能，否则参考悬空导致读数满量程。 */
+  HAL_SYSCFG_VREFBUF_VoltageScalingConfig(SYSCFG_VREFBUF_VOLTAGE_SCALE1);
+  HAL_SYSCFG_VREFBUF_HighImpedanceConfig(SYSCFG_VREFBUF_HIGH_IMPEDANCE_DISABLE);
+  if (HAL_SYSCFG_EnableVREFBUF() != HAL_OK) {
+    return ZF_ERROR;
+  }
+
   s_adc.Instance = ADC4;
   s_adc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   s_adc.Init.Resolution = resolution;
