@@ -29,3 +29,6 @@ Thumbs.db
 
 # Host-side one-off image conversion and resize tools
 /Tools/
+
+# Reference library (SeekFree, read-only)
+/refer/
