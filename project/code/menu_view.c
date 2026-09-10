@@ -9,11 +9,15 @@
 #define MENU_VIEW_ITEM_HEIGHT    36U  /**< 每个菜单项占用的垂直像素。 */
 #define MENU_VIEW_SAFE_MARGIN    16U  /**< 圆角窗口四周的安全边距。 */
 
-#define MENU_COLOR_BACKGROUND    0xBCCFU /**< 柔和浅茶褐色页面背景。 */
-#define MENU_COLOR_ITEM          0x9C0CU /**< 低亮度灰棕色普通卡片。 */
-#define MENU_COLOR_TEXT          0x3943U /**< 高对比度深咖啡色普通文字。 */
-#define MENU_COLOR_SELECTED      0x7A66U /**< 暖深棕色选中卡片。 */
-#define MENU_COLOR_SELECTED_TEXT 0xFF9AU /**< 奶油白色选中文字。 */
+/*
+ * 高对比深色配色（对比度经 WCAG 校验）：
+ *   普通文字/卡片 7.1:1，选中文字/卡片 8.2:1，选中块/背景 7.5:1。
+ */
+#define MENU_COLOR_BACKGROUND    0x2125U /**< 深灰蓝页面背景 #20242C。 */
+#define MENU_COLOR_ITEM          0x4A8BU /**< 稍亮的石板灰普通卡片 #4A525E。 */
+#define MENU_COLOR_TEXT          0xF79EU /**< 近白色普通文字 #F0F3F7。 */
+#define MENU_COLOR_SELECTED      0xF507U /**< 琥珀色选中卡片 #F2A33C。 */
+#define MENU_COLOR_SELECTED_TEXT 0x20C1U /**< 近黑色选中文字 #241A08。 */
 
 /**
  * @brief 计算文字在圆角安全区内允许显示的字符数。
