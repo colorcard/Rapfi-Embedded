@@ -37,7 +37,7 @@ static size_t safe_text_length(const char *text, uint16_t x)
   }
 
   usable_width = (uint16_t)(lcd_get_width() - MENU_VIEW_SAFE_MARGIN - x);
-  max_chars = usable_width / ASCII_Font24.Width;
+  max_chars = usable_width / ASCII_Font20.Width;
   length = strlen(text);
   return length < max_chars ? length : max_chars;
 }
@@ -156,7 +156,7 @@ void menu_view_system_navigation_common(const menu_item_t *items,
   }
 
   lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font24);
+  lcd_fb_set_font(&ASCII_Font20);
 
   for (uint16_t row = 0U;
        (row < visible_rows) && ((page_start + row) < sibling_count);
@@ -181,7 +181,7 @@ void menu_view_system_navigation_common(const menu_item_t *items,
       lcd_fb_set_background_color(MENU_COLOR_ITEM);
     }
     draw_safe_string((uint16_t)(MENU_VIEW_SAFE_MARGIN + 6U),
-                     (uint16_t)(row_y + 6U), item->name);
+                     (uint16_t)(row_y + 8U), item->name);
   }
 }
 
@@ -196,7 +196,7 @@ void menu_view_user_function_page_common(const char *title, const char *line1,
                                        const char *line2)
 {
   lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font24);
+  lcd_fb_set_font(&ASCII_Font20);
   lcd_fb_set_pen_color(MENU_COLOR_TEXT);
   lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
   draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN, title);
@@ -205,7 +205,7 @@ void menu_view_user_function_page_common(const char *title, const char *line1,
   draw_safe_string(
       MENU_VIEW_SAFE_MARGIN,
       (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font24.Height),
+                 ASCII_Font20.Height),
       "BACK: return");
 }
 
@@ -217,7 +217,7 @@ void menu_view_user_function_page_common(const char *title, const char *line1,
 void menu_view_user_key_remap_test_8(int32_t value)
 {
   lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font24);
+  lcd_fb_set_font(&ASCII_Font20);
   lcd_fb_set_pen_color(MENU_COLOR_TEXT);
   lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
   draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
@@ -227,7 +227,7 @@ void menu_view_user_key_remap_test_8(int32_t value)
   draw_safe_string(
       MENU_VIEW_SAFE_MARGIN,
       (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font24.Height),
+                 ASCII_Font20.Height),
       "BACK: return");
 }
 
@@ -248,7 +248,7 @@ void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
                                   uint32_t uptime_s)
 {
   lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font24);
+  lcd_fb_set_font(&ASCII_Font20);
   lcd_fb_set_pen_color(MENU_COLOR_TEXT);
   lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
   draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
@@ -257,6 +257,6 @@ void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
   draw_safe_string(
       MENU_VIEW_SAFE_MARGIN,
       (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font24.Height),
+                 ASCII_Font20.Height),
       "BACK: return");
 }
