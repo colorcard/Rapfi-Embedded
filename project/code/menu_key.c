@@ -21,10 +21,10 @@ typedef struct {
 
 /** @brief 四个菜单动作按顺序对应的 BSP 按键。 */
 static const key_index_enum menu_key_map[MENU_KEY_COUNT] = {
-  KEY_1, /* Up   - PA4 */
-  KEY_3, /* Down - PA6 */
-  KEY_2, /* OK   - PA5 */
-  KEY_4  /* Back - PA7 */
+  KEY_3, /* Up   - PA6 */
+  KEY_2, /* Down - PA5 */
+  KEY_4, /* OK   - PA7 */
+  KEY_1  /* Back - PA4 */
 };
 
 /** @brief 每个物理按键对应的基础短按动作。 */
