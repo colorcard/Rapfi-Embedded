@@ -72,6 +72,7 @@
 #define BSP_ENABLE_SPI1     1U /* LCD 依赖 */
 #define BSP_ENABLE_CAN2     0U
 #define BSP_ENABLE_ADC4     1U
+#define BSP_ENABLE_RTC      1U /* 实时时钟，计时器菜单依赖 */
 #define BSP_ENABLE_PIT      1U
 #define BSP_ENABLE_ENCODER 0U /* TIM2/TIM3 正交编码器 */
 #define BSP_ENABLE_NRF24L01 0U /* PB1 CSN / PB2 CE / SPI1 */

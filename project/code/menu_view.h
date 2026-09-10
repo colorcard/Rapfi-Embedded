@@ -58,4 +58,20 @@ void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
 void menu_view_user_param_view_11_refresh(uint32_t voltage_mv, uint16_t adc_raw,
                                           uint32_t uptime_s);
 
+/**
+ * @brief 整页绘制 RTC 计时器页面。
+ * @param seconds 已计时秒数。
+ * @param running true 表示正在计时。
+ * @return 无。
+ */
+void menu_view_user_timer_12(uint32_t seconds, bool running);
+
+/**
+ * @brief 只重绘计时器页面的数值与状态，避免整屏刷新。
+ * @param seconds 已计时秒数。
+ * @param running true 表示正在计时。
+ * @return 无。
+ */
+void menu_view_user_timer_12_refresh(uint32_t seconds, bool running);
+
 #endif

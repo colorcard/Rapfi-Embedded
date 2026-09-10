@@ -231,6 +231,39 @@ void menu_view_user_key_remap_test_8(int32_t value)
       "BACK: return");
 }
 
+void menu_view_user_timer_12_refresh(uint32_t seconds, bool running)
+{
+  /* 时分秒拆开，避免依赖浮点格式化。 */
+  uint32_t hours = seconds / 3600U;
+  uint32_t minutes = (seconds / 60U) % 60U;
+  uint32_t secs = seconds % 60U;
+
+  /* 先覆盖数值区，防止旧内容残留。 */
+  lcd_fb_fill_rect(MENU_VIEW_SAFE_MARGIN, 50,
+                   (uint16_t)(lcd_get_width() - 2U * MENU_VIEW_SAFE_MARGIN),
+                   70U, MENU_COLOR_BACKGROUND);
+  lcd_printf(MENU_VIEW_SAFE_MARGIN, 54, "%02lu:%02lu:%02lu",
+             (unsigned long)hours, (unsigned long)minutes, (unsigned long)secs);
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 92U, running ? "RUN" : "HOLD");
+}
+
+void menu_view_user_timer_12(uint32_t seconds, bool running)
+{
+  lcd_fb_clear(MENU_COLOR_BACKGROUND);
+  lcd_fb_set_font(&ASCII_Font20);
+  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
+  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN, "Timer");
+  menu_view_user_timer_12_refresh(seconds, running);
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 124U, "OK start/stop");
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 158U, "UP: reset");
+  draw_safe_string(
+      MENU_VIEW_SAFE_MARGIN,
+      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
+                 ASCII_Font20.Height),
+      "BACK: exit");
+}
+
 void menu_view_user_param_view_11_refresh(uint32_t voltage_mv, uint16_t adc_raw,
                                           uint32_t uptime_s)
 {

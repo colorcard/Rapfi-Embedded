@@ -66,6 +66,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${HAL_DIR}/stm32g4xx_hal_gpio.c
     ${HAL_DIR}/stm32g4xx_hal_pwr.c
     ${HAL_DIR}/stm32g4xx_hal_pwr_ex.c
+    ${HAL_DIR}/stm32g4xx_hal_rtc.c
+    ${HAL_DIR}/stm32g4xx_hal_rtc_ex.c
     ${HAL_DIR}/stm32g4xx_hal_rcc.c
     ${HAL_DIR}/stm32g4xx_hal_rcc_ex.c
     ${HAL_DIR}/stm32g4xx_hal_adc.c
@@ -99,6 +101,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_i2c.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_pit.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_pwm.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_rtc.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_spi.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_timer.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_uart.c

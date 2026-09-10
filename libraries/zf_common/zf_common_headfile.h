@@ -23,6 +23,7 @@
 #include "zf_driver_i2c.h"
 #include "zf_driver_pit.h"
 #include "zf_driver_pwm.h"
+#include "zf_driver_rtc.h"
 #include "zf_driver_spi.h"
 #include "zf_driver_timer.h"
 #include "zf_driver_uart.h"

@@ -94,6 +94,11 @@ zf_status_t bsp_init(void)
   status = bsp_collect(status, servo_init());
 #endif
 
+  /* 实时时钟：为计时器/日历提供基准。 */
+#if (BSP_ENABLE_RTC != 0U)
+  status = bsp_collect(status, rtc_init());
+#endif
+
   /* 周期中断：按键扫描等周期任务。 */
 #if (BSP_ENABLE_PIT != 0U)
   status = bsp_collect(status, pit_init(PIT_DEFAULT_PERIOD_MS));
