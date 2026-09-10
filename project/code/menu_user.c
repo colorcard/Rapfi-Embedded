@@ -17,23 +17,22 @@ static int32_t template_value;
 /** @brief 参数观察页上一次刷新时的 HAL 毫秒时基，用于限频。 */
 static uint32_t param_view_last_tick;
 
-/** @brief 用户可直接修改的菜单层级、名称及默认功能页面配置。 */
+/*
+ * 菜单层级规划：
+ *   顶层（parent_id = -1）直接列出所有功能页，按 OK 进入、BACK 返回，
+ *   不再设置 "Main Menu"/"modeX" 之类的中间容器，避免层级过深。
+ *
+ * 新增页面：在数组末尾追加 {唯一ID, -1, "清晰标题", 按键回调, 周期回调或NULL}。
+ * 命名建议：标题为简短英文（LCD 仅支持 ASCII），一眼能看出功能。
+ */
 static menu_item_t user_menu_items[] = {
-    {0, -1, "Main Menu", NULL, NULL},
-    {1, 0, "mode1", NULL, NULL},
-    {2, 0, "mode2", NULL, NULL},
-    {3, 0, "mode3", NULL, NULL},
-    {4, 0, "mode4", NULL, NULL},
-    {5, 0, "mode5", NULL, NULL},
-    {6, 0, "mode6", NULL, NULL},
-    {7, 0, "mode7", NULL, NULL},
-    {8, 1, "key_remap_test", menu_user_key_remap_test, NULL},
-    {9, 1, "imu_angle_display", menu_user_placeholder, NULL},
-    {10, 2, "brushless_calibration", menu_user_placeholder, NULL},
-    {11, 0, "param_view", menu_user_param_view, menu_user_param_view_poll},
+    {11, -1, "Param View", menu_user_param_view, menu_user_param_view_poll},
+    {8,  -1, "Key Test",   menu_user_key_remap_test, NULL},
+    {9,  -1, "IMU Angle",  menu_user_placeholder, NULL},
+    {10, -1, "Motor Cal",  menu_user_placeholder, NULL},
     /*
      * 挂载模板页面示例：
-     * {12, 2, "user_page", menu_user_page_template, NULL},
+     * {12, -1, "User Page", menu_user_page_template, NULL},
      */
 };
 

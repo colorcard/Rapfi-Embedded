@@ -217,7 +217,7 @@ void menu_view_user_key_remap_test_8(int32_t value)
   lcd_fb_set_pen_color(MENU_COLOR_TEXT);
   lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
   draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
-                   "key_remap_test");
+                   "Key Test");
   lcd_printf(MENU_VIEW_SAFE_MARGIN, 58, "Value: %ld", (long)value);
   draw_safe_string(MENU_VIEW_SAFE_MARGIN, 94U, "UP/DOWN, OK reset");
   draw_safe_string(
@@ -248,7 +248,7 @@ void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
   lcd_fb_set_pen_color(MENU_COLOR_TEXT);
   lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
   draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
-                   "param_view");
+                   "Param View");
   menu_view_user_param_view_11_refresh(voltage_mv, adc_raw, uptime_s);
   draw_safe_string(
       MENU_VIEW_SAFE_MARGIN,
