@@ -226,3 +226,33 @@ void menu_view_user_key_remap_test_8(int32_t value)
                  ASCII_Font24.Height),
       "BACK: return");
 }
+
+void menu_view_user_param_view_11_refresh(uint32_t voltage_mv, uint16_t adc_raw,
+                                          uint32_t uptime_s)
+{
+  /* 先用背景色覆盖数值区，避免新文本比旧文本短时留下残字。 */
+  lcd_fb_fill_rect(MENU_VIEW_SAFE_MARGIN, 54, 
+                   (uint16_t)(lcd_get_width() - 2U * MENU_VIEW_SAFE_MARGIN),
+                   104U, MENU_COLOR_BACKGROUND);
+
+  lcd_printf(MENU_VIEW_SAFE_MARGIN, 58, "Volt:%lu mV", (unsigned long)voltage_mv);
+  lcd_printf(MENU_VIEW_SAFE_MARGIN, 94, "ADC :%u", (unsigned int)adc_raw);
+  lcd_printf(MENU_VIEW_SAFE_MARGIN, 130, "Up  :%lu s", (unsigned long)uptime_s);
+}
+
+void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
+                                  uint32_t uptime_s)
+{
+  lcd_fb_clear(MENU_COLOR_BACKGROUND);
+  lcd_fb_set_font(&ASCII_Font24);
+  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
+  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
+                   "param_view");
+  menu_view_user_param_view_11_refresh(voltage_mv, adc_raw, uptime_s);
+  draw_safe_string(
+      MENU_VIEW_SAFE_MARGIN,
+      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
+                 ASCII_Font24.Height),
+      "BACK: return");
+}

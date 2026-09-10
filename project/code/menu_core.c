@@ -221,6 +221,15 @@ void menu_process(void)
     }
   }
 
+  /* 功能页周期回调：按刷新周期自更新实时参数，便于观察类页面。 */
+  if (function_active && (current_item->poll != NULL)) {
+    /* now_now 与刷新服务使用同一时基，保证本周期内先更新再提交。 */
+    uint32_t now_now = HAL_GetTick();
+    if ((uint32_t)(now_now - last_refresh_tick) >= refresh_period_ms) {
+      current_item->poll();
+    }
+  }
+
   menu_service_refresh();
 }
 

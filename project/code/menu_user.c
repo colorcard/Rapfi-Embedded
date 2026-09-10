@@ -1,32 +1,39 @@
 #include "menu_user.h"
 
 #include "zf_device_lcd_user.h"
+#include "zf_device_power.h"
+#include "zf_driver_adc.h"
 #include "menu_view.h"
 
 static void menu_user_key_remap_test(menu_action_enum action);
 static void menu_user_placeholder(menu_action_enum action);
+static void menu_user_param_view(menu_action_enum action);
+static void menu_user_param_view_poll(void);
 
 /** @brief 按键映射测试页面显示的可增减测试值。 */
 static int32_t key_test_value;
 /** @brief 用户页面模板演示用的状态变量，可替换为实际业务数据。 */
 static int32_t template_value;
+/** @brief 参数观察页上一次刷新时的 HAL 毫秒时基，用于限频。 */
+static uint32_t param_view_last_tick;
 
 /** @brief 用户可直接修改的菜单层级、名称及默认功能页面配置。 */
 static menu_item_t user_menu_items[] = {
-    {0, -1, "Main Menu", NULL},
-    {1, 0, "mode1", NULL},
-    {2, 0, "mode2", NULL},
-    {3, 0, "mode3", NULL},
-    {4, 0, "mode4", NULL},
-    {5, 0, "mode5", NULL},
-    {6, 0, "mode6", NULL},
-    {7, 0, "mode7", NULL},
-    {8, 1, "key_remap_test", menu_user_key_remap_test},
-    {9, 1, "imu_angle_display", menu_user_placeholder},
-    {10, 2, "brushless_calibration", menu_user_placeholder},
+    {0, -1, "Main Menu", NULL, NULL},
+    {1, 0, "mode1", NULL, NULL},
+    {2, 0, "mode2", NULL, NULL},
+    {3, 0, "mode3", NULL, NULL},
+    {4, 0, "mode4", NULL, NULL},
+    {5, 0, "mode5", NULL, NULL},
+    {6, 0, "mode6", NULL, NULL},
+    {7, 0, "mode7", NULL, NULL},
+    {8, 1, "key_remap_test", menu_user_key_remap_test, NULL},
+    {9, 1, "imu_angle_display", menu_user_placeholder, NULL},
+    {10, 2, "brushless_calibration", menu_user_placeholder, NULL},
+    {11, 0, "param_view", menu_user_param_view, menu_user_param_view_poll},
     /*
      * 挂载模板页面示例：
-     * {11, 2, "user_page", menu_user_page_template},
+     * {12, 2, "user_page", menu_user_page_template, NULL},
      */
 };
 
@@ -38,6 +45,7 @@ void menu_user_init(void)
 {
   key_test_value = 0;
   template_value = 0;
+  param_view_last_tick = 0U;
 }
 
 /**
@@ -168,4 +176,64 @@ static void menu_user_placeholder(menu_action_enum action)
                                     "Callback not installed",
                                     "Edit menu_user.c");
   menu_request_refresh();//申请刷屏，为了便于维护建议不要在view的页面函数中随意调用该函数
+}
+
+/**
+ * @brief 采集参数并绘制参数观察页。
+ * @param full true 表示整页重绘，false 表示只刷新数值区。
+ * @return 无。
+ */
+static void menu_user_param_draw(bool full)
+{
+  uint32_t voltage_mv = 0U;
+  uint16_t adc_raw = 0U;
+
+  if (adc_convert(ADC4_IN4, &adc_raw) != ZF_OK) {
+    adc_raw = 0U;
+  }
+  if (power_read_voltage_mv(&voltage_mv) != ZF_OK) {
+    voltage_mv = 0U;
+  }
+
+  if (full) {
+    menu_view_user_param_view_11(voltage_mv, adc_raw, HAL_GetTick() / 1000U);
+  } else {
+    menu_view_user_param_view_11_refresh(voltage_mv, adc_raw,
+                                         HAL_GetTick() / 1000U);
+  }
+}
+
+/**
+ * @brief 参数观察页的按键处理函数。
+ * @param action 本次按键动作。
+ * @return 无。
+ * @note 进入页面时整页绘制一次；BACK 退出返回上级菜单。
+ */
+static void menu_user_param_view(menu_action_enum action)
+{
+  if ((action == MENU_ACTION_BACK) || (action == MENU_ACTION_BACK_LONG)) {
+    menu_exit_function();
+    return;
+  }
+
+  param_view_last_tick = HAL_GetTick();
+  menu_user_param_draw(true);
+  menu_request_refresh();
+}
+
+/**
+ * @brief 参数观察页的周期刷新回调。
+ * @return 无。
+ * @note 限频到约 4 Hz，只刷新数值区，避免整屏刷新拖慢菜单。
+ */
+static void menu_user_param_view_poll(void)
+{
+  uint32_t now = HAL_GetTick();
+
+  if ((uint32_t)(now - param_view_last_tick) < 250U) {
+    return;
+  }
+  param_view_last_tick = now;
+  menu_user_param_draw(false);
+  menu_request_refresh();
 }

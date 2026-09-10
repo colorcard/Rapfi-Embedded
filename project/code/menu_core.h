@@ -13,11 +13,15 @@ extern "C" {
 /** @brief 菜单叶子功能的按键处理回调类型。 */
 typedef void (*menu_handler_t)(menu_action_enum action);
 
+/** @brief 功能激活期间的周期回调类型，用于实时刷新观察类页面。 */
+typedef void (*menu_poll_t)(void);
+
 typedef struct {
   int16_t id;           /**< 当前菜单项的唯一编号。 */
   int16_t parent_id;    /**< 父菜单编号，-1 表示根级菜单。 */
   const char *name;     /**< 显示在菜单中的零结尾名称。 */
   menu_handler_t handler;  /**< 叶子功能回调，父菜单或无功能项可为 NULL。 */
+  menu_poll_t poll;     /**< 功能激活时的周期回调，可为 NULL。 */
 } menu_item_t;
 
 /**

@@ -36,4 +36,26 @@ void menu_view_user_function_page_common(const char *title, const char *line1,
  */
 void menu_view_user_key_remap_test_8(int32_t value);
 
+/**
+ * @brief 整页绘制参数观察页面，包含标题、数值与返回提示。
+ * @param voltage_mv 电源电压，单位毫伏。
+ * @param adc_raw 电源电压通道的 ADC 原始值。
+ * @param uptime_s 运行时间，单位秒。
+ * @return 无。
+ * @note 进入功能页时调用一次；后续刷新请使用
+ * menu_view_user_param_view_11_refresh。
+ */
+void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
+                                  uint32_t uptime_s);
+
+/**
+ * @brief 只重绘参数观察页面的数值区，避免整屏刷新占用 SPI 带宽。
+ * @param voltage_mv 电源电压，单位毫伏。
+ * @param adc_raw 电源电压通道的 ADC 原始值。
+ * @param uptime_s 运行时间，单位秒。
+ * @return 无。
+ */
+void menu_view_user_param_view_11_refresh(uint32_t voltage_mv, uint16_t adc_raw,
+                                          uint32_t uptime_s);
+
 #endif
