@@ -96,6 +96,9 @@ def main() -> int:
             ser.write(arr.tobytes())
             ser.flush()
             frames += 1
+            if frames % 10 == 0:
+                print(f"\r... 已推送 {frames} 帧", end="", file=sys.stderr,
+                      flush=True)
 
             dt = time.time() - start
             if period > dt:
