@@ -118,7 +118,9 @@ void TIM1_TRG_COM_TIM17_IRQHandler(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim == timer_get_handle(TIMER_17)) {
+#ifndef APP_LVGL_DEMO
     menu_key_scan();
+#endif
   }
 }
 

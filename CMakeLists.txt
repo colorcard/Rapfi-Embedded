@@ -33,6 +33,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
+# 应用界面选择：ON 使用 LVGL 演示界面，OFF 使用内置菜单。
+option(APP_LVGL_DEMO "Build the LVGL demo UI instead of the built-in menu" ON)
+
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
 
@@ -113,8 +116,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_key.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_fonts.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_hw.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_image.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_user.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_led.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_nrf24l01.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_power.c
@@ -124,13 +125,40 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # 框架入口
     ${CMAKE_SOURCE_DIR}/project/user/src/main.c
     ${CMAKE_SOURCE_DIR}/project/user/src/isr.c
-
-    # 用户业务代码
-    ${CMAKE_SOURCE_DIR}/project/code/menu_core.c
-    ${CMAKE_SOURCE_DIR}/project/code/menu_key.c
-    ${CMAKE_SOURCE_DIR}/project/code/menu_user.c
-    ${CMAKE_SOURCE_DIR}/project/code/menu_view.c
 )
+
+# ---------------------------------------------------------------------------
+# 应用层：LVGL 演示界面 或 内置菜单（二选一）
+#   LVGL 演示会占用内存池与绘制缓冲，因此仅在需要时加入其源码。
+# ---------------------------------------------------------------------------
+if(APP_LVGL_DEMO)
+    message("UI: LVGL demo")
+    file(GLOB_RECURSE LVGL_SOURCES CONFIGURE_DEPENDS
+         ${CMAKE_SOURCE_DIR}/libraries/third_party/lvgl/src/*.c)
+    # 第三方库统一关闭告警，避免其风格与工程 -Wall -Wextra 冲突。
+    set_source_files_properties(${LVGL_SOURCES} PROPERTIES COMPILE_OPTIONS -w)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+        ${LVGL_SOURCES}
+        ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_lvgl.c
+    )
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/libraries/third_party/lvgl
+    )
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+        APP_LVGL_DEMO=1
+        LV_CONF_INCLUDE_SIMPLE
+    )
+else()
+    message("UI: built-in menu")
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_image.c
+        ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_user.c
+        ${CMAKE_SOURCE_DIR}/project/code/menu_core.c
+        ${CMAKE_SOURCE_DIR}/project/code/menu_key.c
+        ${CMAKE_SOURCE_DIR}/project/code/menu_user.c
+        ${CMAKE_SOURCE_DIR}/project/code/menu_view.c
+    )
+endif()
 
 # ---------------------------------------------------------------------------
 # 头文件搜索路径

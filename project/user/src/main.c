@@ -1,5 +1,9 @@
 #include "zf_common_headfile.h"
+#ifdef APP_LVGL_DEMO
+#include "zf_device_lcd_lvgl.h"
+#else
 #include "menu_core.h"
+#endif
 
 /** @brief 最近的电源电压采样值，单位毫伏；供 SWD 在线观测。 */
 volatile uint32_t g_power_voltage_mv;
@@ -41,12 +45,22 @@ int main(void)
     }
   }
 
+#ifdef APP_LVGL_DEMO
+  (void)lcd_hw_init();
+  lcd_lvgl_init();
+  lcd_lvgl_demo();
+#else
   lcd_init(LCD_DIRECTION_LANDSCAPE);
   menu_init(50U);
+#endif
   last_report = HAL_GetTick();
 
   while (1) {
+#ifdef APP_LVGL_DEMO
+    lcd_lvgl_handler();
+#else
     menu_process();
+#endif
 
     /* 每秒通过调试串口上报一次电源电压，同时刷新供 SWD 观测的全局变量。 */
     if ((HAL_GetTick() - last_report) >= 1000U) {
