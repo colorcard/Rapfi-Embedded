@@ -9,7 +9,7 @@ extern "C" {
 
 /** @brief 板级 UART 逻辑编号。 */
 typedef enum {
-  UART_1 = 0, /**< USART1：PA9 TX / PA10 RX（ST-10 下载口） */
+  UART_1 = 0, /**< USART1：PC4 TX / PC5 RX（扩展板 H2 串口） */
   UART_2,     /**< USART2：PA2 TX / PA3 RX */
   UART_3,     /**< USART3：PB10 TX / PB11 RX */
   UART_NUM
