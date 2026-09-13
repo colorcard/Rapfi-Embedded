@@ -15,6 +15,8 @@ static SPI_TypeDef *spi_instance(spi_index_enum bus)
   switch (bus) {
     case SPI_1:
       return SPI1;
+    case SPI_2:
+      return SPI2;
     default:
       return NULL;
   }
@@ -129,6 +131,16 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *spiHandle)
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  } else if (spiHandle->Instance == SPI2) {
+    __HAL_RCC_SPI2_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    /* SPI2：PB13 SCK / PB14 MISO / PB15 MOSI；PB12 作为片选由设备层控制。 */
+    GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF5_SPI2;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
   }
 }
 
@@ -137,5 +149,8 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef *spiHandle)
   if (spiHandle->Instance == SPI1) {
     __HAL_RCC_SPI1_CLK_DISABLE();
     HAL_GPIO_DeInit(GPIOB, GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5);
+  } else if (spiHandle->Instance == SPI2) {
+    __HAL_RCC_SPI2_CLK_DISABLE();
+    HAL_GPIO_DeInit(GPIOB, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15);
   }
 }

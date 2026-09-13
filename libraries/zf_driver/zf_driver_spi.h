@@ -10,6 +10,7 @@ extern "C" {
 /** @brief 板级 SPI 逻辑编号。 */
 typedef enum {
   SPI_1 = 0, /**< SPI1：PB3 SCK / PB4 MISO / PB5 MOSI（NRF24L01、LCD 共用） */
+  SPI_2,     /**< SPI2：PB13 SCK / PB14 MISO / PB15 MOSI（PB12 片选，W25Q128） */
   SPI_NUM
 } spi_index_enum;
 

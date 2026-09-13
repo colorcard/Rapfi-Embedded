@@ -119,6 +119,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_nrf24l01.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_power.c
     ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_servo.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_w25q128.c
 
     # 框架入口
     ${CMAKE_SOURCE_DIR}/project/user/src/main.c

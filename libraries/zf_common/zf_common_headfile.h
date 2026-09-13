@@ -41,5 +41,6 @@
 #include "zf_device_nrf24l01.h"
 #include "zf_device_power.h"
 #include "zf_device_servo.h"
+#include "zf_device_w25q128.h"
 
 #endif /* _zf_common_headfile_h_ */
