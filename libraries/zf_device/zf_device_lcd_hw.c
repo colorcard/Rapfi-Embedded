@@ -72,19 +72,28 @@ static HAL_StatusTypeDef lcd_set_window(uint16_t x, uint16_t y,
 {
   uint16_t x2 = (uint16_t)(x + width - 1U);
   uint16_t y2 = (uint16_t)(y + height - 1U);
+  uint16_t caset1, caset2, raset1, raset2;
   uint8_t area[4];
 
-  x = (uint16_t)(x + LCD_X_OFFSET);
-  x2 = (uint16_t)(x2 + LCD_X_OFFSET);
-  y = (uint16_t)(y + LCD_Y_OFFSET);
-  y2 = (uint16_t)(y2 + LCD_Y_OFFSET);
+#if ((LCD_MADCTL & 0x20U) != 0U)
+  /* 横屏（MV）：CASET 变为长轴（行）地址，由 x 驱动并带 20 行偏移；RASET 为列地址。 */
+  caset1 = (uint16_t)(x + LCD_Y_OFFSET);
+  caset2 = (uint16_t)(x2 + LCD_Y_OFFSET);
+  raset1 = (uint16_t)(y + LCD_X_OFFSET);
+  raset2 = (uint16_t)(y2 + LCD_X_OFFSET);
+#else
+  caset1 = (uint16_t)(x + LCD_X_OFFSET);
+  caset2 = (uint16_t)(x2 + LCD_X_OFFSET);
+  raset1 = (uint16_t)(y + LCD_Y_OFFSET);
+  raset2 = (uint16_t)(y2 + LCD_Y_OFFSET);
+#endif
 
-  area[0] = (uint8_t)(x >> 8); area[1] = (uint8_t)x;
-  area[2] = (uint8_t)(x2 >> 8); area[3] = (uint8_t)x2;
+  area[0] = (uint8_t)(caset1 >> 8); area[1] = (uint8_t)caset1;
+  area[2] = (uint8_t)(caset2 >> 8); area[3] = (uint8_t)caset2;
   if (lcd_command(0x2AU, area, sizeof(area)) != HAL_OK) return HAL_ERROR;
 
-  area[0] = (uint8_t)(y >> 8); area[1] = (uint8_t)y;
-  area[2] = (uint8_t)(y2 >> 8); area[3] = (uint8_t)y2;
+  area[0] = (uint8_t)(raset1 >> 8); area[1] = (uint8_t)raset1;
+  area[2] = (uint8_t)(raset2 >> 8); area[3] = (uint8_t)raset2;
   if (lcd_command(0x2BU, area, sizeof(area)) != HAL_OK) return HAL_ERROR;
   return lcd_command(0x2CU, NULL, 0U);
 }

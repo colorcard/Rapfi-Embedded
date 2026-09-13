@@ -15,9 +15,17 @@
 #define UI_COLOR_SEL     lv_color_hex(0xF2A33CU)
 #define UI_COLOR_SEL_TXT lv_color_hex(0x241A08U)
 #define UI_COLOR_HINT    lv_color_hex(0xA0A6B0U)
+#define UI_COLOR_RUN     lv_color_hex(0x2E7D32U)
+#define UI_COLOR_HOLD    lv_color_hex(0x6B7280U)
 
 /** @brief 页面内的数值标签（最多四个，供各页刷新函数复用）。 */
 static lv_obj_t *s_value_label[4];
+
+/* 计时器页面专用控件。 */
+static lv_obj_t *s_timer_time;         /**< 大号时间文本。 */
+static lv_obj_t *s_timer_status;       /**< 状态胶囊背景。 */
+static lv_obj_t *s_timer_status_label; /**< 状态胶囊文字。 */
+static lv_obj_t *s_timer_bar;          /**< 秒进度条。 */
 
 /**
  * @brief 清空当前屏幕并重置数值标签缓存，作为新页面的画布。
@@ -32,6 +40,10 @@ static lv_obj_t *view_reset(void)
   for (i = 0U; i < 4U; ++i) {
     s_value_label[i] = NULL;
   }
+  s_timer_time = NULL;
+  s_timer_status = NULL;
+  s_timer_status_label = NULL;
+  s_timer_bar = NULL;
   lv_obj_set_style_bg_color(screen, UI_COLOR_BG, LV_PART_MAIN);
   lv_obj_set_style_text_color(screen, UI_COLOR_TEXT, LV_PART_MAIN);
   return screen;
@@ -127,7 +139,7 @@ void menu_view_system_navigation_common(const menu_item_t *items,
   lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_MAIN);
   lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(list, 2, LV_PART_MAIN);
-  lv_obj_set_style_pad_row(list, 6, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(list, 4, LV_PART_MAIN);
   lv_obj_clear_flag(list, LV_OBJ_FLAG_SCROLLABLE);
 
   for (i = 0U; i < item_count; ++i) {
@@ -141,7 +153,7 @@ void menu_view_system_navigation_common(const menu_item_t *items,
     selected = (&items[i] == current_item);
 
     button = lv_btn_create(list);
-    lv_obj_set_size(button, LV_PCT(100), 34);
+    lv_obj_set_size(button, LV_PCT(100), 30);
     lv_obj_set_style_bg_color(button, selected ? UI_COLOR_SEL : UI_COLOR_ITEM,
                               LV_PART_MAIN);
     lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
@@ -201,22 +213,78 @@ void menu_view_user_timer_12_refresh(uint32_t seconds, bool running)
   uint32_t minutes = (seconds / 60U) % 60U;
   uint32_t secs = seconds % 60U;
 
-  view_set_text(s_value_label[0], "%02lu:%02lu:%02lu", (unsigned long)hours,
+  view_set_text(s_timer_time, "%02lu:%02lu:%02lu", (unsigned long)hours,
                 (unsigned long)minutes, (unsigned long)secs);
-  if (s_value_label[1] != NULL) {
-    lv_label_set_text(s_value_label[1], running ? "RUN" : "HOLD");
+
+  if (s_timer_status != NULL) {
+    lv_obj_set_style_bg_color(s_timer_status,
+                              running ? UI_COLOR_RUN : UI_COLOR_HOLD,
+                              LV_PART_MAIN);
+  }
+  if (s_timer_status_label != NULL) {
+    lv_label_set_text(s_timer_status_label, running ? "RUN" : "HOLD");
+  }
+  if (s_timer_bar != NULL) {
+    lv_bar_set_value(s_timer_bar, (int32_t)secs, LV_ANIM_OFF);
   }
 }
 
 void menu_view_user_timer_12(uint32_t seconds, bool running)
 {
   lv_obj_t *screen = view_reset();
+  lv_obj_t *card;
+  lv_obj_t *pill;
+  lv_obj_t *hint;
+
   view_title(screen, "Timer");
-  s_value_label[0] = view_line(screen, NULL, 52);
-  s_value_label[1] = view_line(screen, NULL, 92);
-  (void)view_line(screen, "OK start/stop", 130);
-  (void)view_line(screen, "UP: reset", 160);
-  view_hint(screen, "BACK: exit");
+
+  /* 大号时间卡片。 */
+  card = lv_obj_create(screen);
+  lv_obj_set_size(card, 250, 76);
+  lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 30);
+  lv_obj_set_style_bg_color(card, UI_COLOR_ITEM, LV_PART_MAIN);
+  lv_obj_set_style_border_width(card, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(card, 12, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(card, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+  s_timer_time = lv_label_create(card);
+  lv_obj_set_style_text_font(s_timer_time, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_timer_time, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_center(s_timer_time);
+
+  /* 运行状态胶囊：RUN 绿色 / HOLD 灰色。 */
+  pill = lv_obj_create(screen);
+  lv_obj_set_size(pill, 96, 30);
+  lv_obj_align(pill, LV_ALIGN_TOP_MID, 0, 116);
+  lv_obj_set_style_radius(pill, 15, LV_PART_MAIN);
+  lv_obj_set_style_border_width(pill, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(pill, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(pill, LV_OBJ_FLAG_SCROLLABLE);
+  s_timer_status = pill;
+
+  s_timer_status_label = lv_label_create(pill);
+  lv_obj_set_style_text_font(s_timer_status_label, &lv_font_montserrat_16,
+                             LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_timer_status_label, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_center(s_timer_status_label);
+
+  /* 秒进度条。 */
+  s_timer_bar = lv_bar_create(screen);
+  lv_obj_set_size(s_timer_bar, 200, 10);
+  lv_obj_align(s_timer_bar, LV_ALIGN_TOP_MID, 0, 158);
+  lv_bar_set_range(s_timer_bar, 0, 59);
+  lv_obj_set_style_bg_color(s_timer_bar, UI_COLOR_ITEM, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(s_timer_bar, UI_COLOR_SEL, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(s_timer_bar, 5, LV_PART_MAIN);
+  lv_obj_set_style_radius(s_timer_bar, 5, LV_PART_INDICATOR);
+
+  /* 键位提示。 */
+  hint = lv_label_create(screen);
+  lv_label_set_text(hint, "OK start/stop    UP reset");
+  lv_obj_set_style_text_color(hint, UI_COLOR_HINT, LV_PART_MAIN);
+  lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -4);
+
   menu_view_user_timer_12_refresh(seconds, running);
 }
 

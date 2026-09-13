@@ -85,12 +85,14 @@
 #endif
 
 /* ------------------------------- LCD ---------------------------------- */
-#define LCD_WIDTH           240U
-#define LCD_HEIGHT          280U
-#define LCD_X_OFFSET        0U
-#define LCD_Y_OFFSET        20U
-/* ST7789 MADCTL(0x36)：0x00 正常，0xC0=MX|MY 旋转 180°，0x60/0xA0=90°/270°。 */
-#define LCD_MADCTL          0xC0U
+/* 逻辑分辨率：当前为横屏（面板 240x280 顺时针旋转 90°）。 */
+#define LCD_WIDTH           280U
+#define LCD_HEIGHT          240U
+#define LCD_X_OFFSET        0U  /* CASET（列）偏移。 */
+#define LCD_Y_OFFSET        20U /* RASET（行）偏移：面板在 240x320 控制器内起始行。 */
+/* ST7789 MADCTL(0x36)：0x00 竖屏，0x60=MV|MX / 0xA0=MV|MY 为两种横屏（相差 180°），
+ * 0xC0=MX|MY 竖屏180°。当前使用 0xA0 横屏。 */
+#define LCD_MADCTL          0xA0U
 #define LCD_TIMEOUT_MS      1000U
 #define LCD_CS_PORT         GPIOD
 #define LCD_CS_PIN          GPIO_PIN_11
