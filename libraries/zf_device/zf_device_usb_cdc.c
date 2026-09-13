@@ -57,7 +57,9 @@ static volatile uint32_t s_rx_head;
 static volatile uint32_t s_rx_tail;
 
 static uint8_t s_frame[VIDEO_FRAME_CAP]; /* 持久整帧缓冲（RGB332 或 RGB565-BE） */
-static uint8_t s_dst[VIDEO_STRIP_PX * 2U];/* 展开后的输出条带（RGB565 大端） */
+static uint8_t s_dst[2][VIDEO_STRIP_PX * 2U]; /* 双条带缓冲，配合 DMA 重叠 */
+static uint16_t s_lut332[256];            /* RGB332 -> RGB565 查表，替代逐像素运算 */
+static volatile uint8_t s_dma_busy;
 static uint32_t s_strip_bytes;            /* 每条带源字节数 */
 static uint32_t s_fill;                   /* 当前条带已收字节 */
 static uint16_t s_mask;                   /* 本帧变化条带掩码 */
@@ -71,6 +73,19 @@ static volatile uint32_t s_last_frame_tick;
 volatile uint32_t g_video_frame_cnt;
 volatile uint32_t g_video_strip_cnt;
 volatile uint32_t g_video_rx_bytes;
+/** @brief 刷屏耗时（DWT 周期）：最近一次 / 历史最大。 */
+volatile uint32_t g_video_present_cycles;
+volatile uint32_t g_video_present_max_cycles;
+/** @brief 其中用于“展开像素”的周期数（最近一次）。 */
+volatile uint32_t g_video_expand_cycles;
+
+/** @brief 使能 DWT 周期计数器，用于测量刷屏时间。 */
+static void dwt_enable(void)
+{
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0U;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
 
 void zf_usb_cdc_on_rx(const uint8_t *data, uint32_t len)
 {
@@ -116,42 +131,88 @@ static uint16_t video_pixel(const uint8_t *p, uint8_t bpp)
   }
 }
 
-/** @brief 从整帧缓冲展开条带 strip 到 s_dst（不发送）。 */
-static void video_expand_strip(uint8_t strip)
+/** @brief 从整帧缓冲展开条带 strip 到 dst（RGB565 大端，不发送）。 */
+static void video_expand_strip(uint8_t strip, uint8_t *dst)
 {
   const video_fmt_t *fmt = &s_fmt[s_fmt_index];
-  uint16_t out_row = (uint16_t)(strip * VIDEO_STRIP_ROWS);
-  uint16_t oy;
+  const uint8_t *base = &s_frame[(uint32_t)strip * s_strip_bytes];
+  uint16_t sy;
+  uint16_t sx;
 
-  for (oy = 0U; oy < VIDEO_STRIP_ROWS; ++oy) {
-    uint16_t sy = (uint16_t)((out_row + oy) / fmt->scale);
-    uint16_t ox;
-    for (ox = 0U; ox < LCD_WIDTH; ++ox) {
-      uint16_t sx = (uint16_t)(ox / fmt->scale);
-      const uint8_t *base = &s_frame[(uint32_t)strip * s_strip_bytes];
-      uint32_t si = ((uint32_t)(sy - (uint32_t)out_row / fmt->scale) * fmt->src_w
-                     + sx) * (uint32_t)fmt->bpp;
-      uint16_t col = video_pixel(&base[si], fmt->bpp);
-      uint32_t di = ((uint32_t)oy * LCD_WIDTH + ox) * 2U;
-      s_dst[di] = (uint8_t)(col >> 8);
-      s_dst[di + 1U] = (uint8_t)col;
+  if (fmt->scale == 1U) {
+    if (fmt->bpp == 2U) {
+      /* 已是 RGB565 大端：整体字节拷贝即可。 */
+      uint32_t n = (uint32_t)VIDEO_STRIP_PX * 2U;
+      while (n-- != 0U) {
+        *dst++ = *base++;
+      }
+      return;
+    }
+    /* RGB332：查表 + 大端写出，无分支/无除法。 */
+    for (sy = 0U; sy < VIDEO_STRIP_ROWS; ++sy) {
+      const uint8_t *s = &base[(uint32_t)sy * LCD_WIDTH];
+      uint8_t *d = &dst[(uint32_t)sy * LCD_WIDTH * 2U];
+      for (sx = 0U; sx < LCD_WIDTH; ++sx) {
+        uint16_t v = s_lut332[s[sx]];
+        *d++ = (uint8_t)(v >> 8);
+        *d++ = (uint8_t)v;
+      }
+    }
+    return;
+  }
+
+  /* 2x 放大：每个源像素写 2x2，无除法。 */
+  for (sy = 0U; sy < (uint16_t)(VIDEO_STRIP_ROWS / fmt->scale); ++sy) {
+    const uint8_t *s = &base[(uint32_t)sy * fmt->src_w * fmt->bpp];
+    uint8_t *d0 = &dst[(uint32_t)(2U * sy) * LCD_WIDTH * 2U];
+    uint8_t *d1 = d0 + ((uint32_t)LCD_WIDTH * 2U);
+    for (sx = 0U; sx < fmt->src_w; ++sx) {
+      uint16_t v;
+      if (fmt->bpp == 2U) {
+        v = (uint16_t)(((uint16_t)s[0] << 8) | s[1]);
+        s += 2U;
+      } else {
+        v = s_lut332[*s++];
+      }
+      {
+        uint8_t hi = (uint8_t)(v >> 8);
+        uint8_t lo = (uint8_t)v;
+        d0[0] = hi; d0[1] = lo; d0[2] = hi; d0[3] = lo;
+        d1[0] = hi; d1[1] = lo; d1[2] = hi; d1[3] = lo;
+      }
+      d0 += 4U;
+      d1 += 4U;
     }
   }
 }
 
 /**
- * @brief 只刷本帧发生变化的条带区间：
- *        取变化的最小/最大条带，用单个窗口把该区间连续刷完（静止帧不写）。
+ * @brief SPI 发送完成回调：清除 DMA 忙标志。
+ */
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+  if (hspi->Instance == SPI1) {
+    s_dma_busy = 0U;
+  }
+}
+
+/**
+ * @brief 只刷本帧变化条带区间：单窗口连续刷，且用 DMA + 双缓冲把“展开下一块”
+ *        与“发送当前块”重叠，最小化刷屏时间与撕裂。
  */
 static void video_present(void)
 {
   uint8_t first = (uint8_t)VIDEO_STRIP_NUM;
   uint8_t last = 0U;
   uint8_t strip;
+  uint8_t buf = 0U;
+  uint32_t t0;
+  uint32_t texp = 0U;
 
   if (s_mask == 0U) {
     return;
   }
+  t0 = DWT->CYCCNT;
   for (strip = 0U; strip < (uint8_t)VIDEO_STRIP_NUM; ++strip) {
     if ((s_mask & (uint16_t)(1U << strip)) != 0U) {
       if (first >= (uint8_t)VIDEO_STRIP_NUM) {
@@ -166,13 +227,33 @@ static void video_present(void)
       != 0) {
     return;
   }
+
   for (strip = first; strip <= last; ++strip) {
-    video_expand_strip(strip);
-    (void)spi_write_8bit_array(SPI_1, s_dst, (uint16_t)(VIDEO_STRIP_PX * 2U),
-                               1000U);
+    uint32_t te = DWT->CYCCNT;
+    video_expand_strip(strip, s_dst[buf]);   /* 与上一块的 DMA 重叠 */
+    texp += DWT->CYCCNT - te;
+    while (s_dma_busy != 0U) {
+      __WFI();
+    }
+    s_dma_busy = 1U;
+    if (lcd_hw_send_pixels_dma(s_dst[buf], (uint32_t)(VIDEO_STRIP_PX * 2U))
+        != 0) {
+      s_dma_busy = 0U;
+    }
     ++g_video_strip_cnt;
+    buf ^= 1U;
+  }
+
+  while (s_dma_busy != 0U) {
+    __WFI();
   }
   lcd_hw_end_area();
+
+  g_video_present_cycles = DWT->CYCCNT - t0;
+  g_video_expand_cycles = texp;
+  if (g_video_present_cycles > g_video_present_max_cycles) {
+    g_video_present_max_cycles = g_video_present_cycles;
+  }
 }
 
 /**
@@ -206,6 +287,13 @@ uint32_t usb_cdc_read(uint8_t *data, uint32_t max_length)
 
 zf_status_t usb_cdc_init(void)
 {
+  uint32_t i;
+
+  dwt_enable();
+  for (i = 0U; i < 256U; ++i) {
+    uint8_t b = (uint8_t)i;
+    s_lut332[i] = video_pixel(&b, 1U);
+  }
   if (USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS) != USBD_OK) {
     return ZF_ERROR;
   }

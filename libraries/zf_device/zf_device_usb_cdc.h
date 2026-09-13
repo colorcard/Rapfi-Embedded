@@ -39,6 +39,16 @@ bool usb_cdc_video_active(void);
  */
 uint32_t usb_cdc_read(uint8_t *data, uint32_t max_length);
 
+/** @brief 调试用计数：收到完整帧数 / 写入条带数 / 收到字节数。 */
+extern volatile uint32_t g_video_frame_cnt;
+extern volatile uint32_t g_video_strip_cnt;
+extern volatile uint32_t g_video_rx_bytes;
+/** @brief 刷屏耗时（DWT 周期）：最近一次 / 历史最大。 */
+extern volatile uint32_t g_video_present_cycles;
+extern volatile uint32_t g_video_present_max_cycles;
+/** @brief 其中用于展开像素的周期数（最近一次）。 */
+extern volatile uint32_t g_video_expand_cycles;
+
 #ifdef __cplusplus
 }
 #endif

@@ -43,8 +43,11 @@ int main(void)
       }
       if (power_read_voltage_mv(&voltage_mv) == ZF_OK) {
         g_power_voltage_mv = voltage_mv;
-        debug_printf("PWR=%lu mV raw=%u\r\n", (unsigned long)voltage_mv,
-                     (unsigned int)adc_raw);
+        debug_printf("PWR=%lu mV raw=%u LCD=%lu/%lu exp=%lu us\r\n",
+                     (unsigned long)voltage_mv, (unsigned int)adc_raw,
+                     (unsigned long)(g_video_present_cycles / 170U),
+                     (unsigned long)(g_video_present_max_cycles / 170U),
+                     (unsigned long)(g_video_expand_cycles / 170U));
       } else {
         debug_printf("PWR=read fail\r\n");
       }
