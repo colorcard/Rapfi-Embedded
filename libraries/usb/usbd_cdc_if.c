@@ -1,8 +1,8 @@
 #include "usbd_cdc_if.h"
 #include "usbd_conf.h"
 
-/** @brief CDC 收发缓冲大小。 */
-#define APP_RX_DATA_SIZE  512U
+/** @brief CDC 收发缓冲大小。接收缓冲按一次预装载长度分配。 */
+#define APP_RX_DATA_SIZE  4096U
 #define APP_TX_DATA_SIZE  512U
 
 extern USBD_HandleTypeDef hUsbDeviceFS;

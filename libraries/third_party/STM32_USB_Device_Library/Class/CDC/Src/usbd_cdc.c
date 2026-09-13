@@ -59,6 +59,12 @@ EndBSPDependencies */
 #include "usbd_cdc.h"
 #include "usbd_ctlreq.h"
 
+/* 接收端点预装载长度：一次装载可连续接收多包，避免每 64 字节 NAK 一次，
+   提升 USB FS 批量接收吞吐。应用缓冲需 >= 该值（见 usbd_cdc_if.c）。 */
+#ifndef CDC_DATA_FS_RX_ARM_SIZE
+#define CDC_DATA_FS_RX_ARM_SIZE 4096U
+#endif
+
 
 /** @addtogroup STM32_USB_DEVICE_LIBRARY
   * @{
@@ -375,7 +381,7 @@ static uint8_t USBD_CDC_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
   {
     /* Prepare Out endpoint to receive next packet */
     (void)USBD_LL_PrepareReceive(pdev, CDCOutEpAdd, hcdc->RxBuffer,
-                                 CDC_DATA_FS_OUT_PACKET_SIZE);
+                                 CDC_DATA_FS_RX_ARM_SIZE);
   }
 
   return (uint8_t)USBD_OK;
@@ -877,7 +883,7 @@ uint8_t USBD_CDC_ReceivePacket(USBD_HandleTypeDef *pdev)
   {
     /* Prepare Out endpoint to receive next packet */
     (void)USBD_LL_PrepareReceive(pdev, CDCOutEpAdd, hcdc->RxBuffer,
-                                 CDC_DATA_FS_OUT_PACKET_SIZE);
+                                 CDC_DATA_FS_RX_ARM_SIZE);
   }
 
   return (uint8_t)USBD_OK;
