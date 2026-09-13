@@ -6,6 +6,17 @@
 
 #include "menu_core.h"
 //命名规范：MenuView_<级别>_<作用>_<菜单ID或Common>，换显示屏请自定义自己的MenuView_System_Navigation_Common
+
+/** @brief IMU 页面显示所需的采样数据。 */
+typedef struct {
+  bool valid;         /**< true 表示本次采样成功。 */
+  int16_t acc[3];     /**< 三轴加速度原始值（X/Y/Z，LSB）。 */
+  int16_t gyro[3];    /**< 三轴陀螺仪原始值（X/Y/Z，LSB）。 */
+  int16_t pitch_d10;  /**< 俯仰角，单位 0.1°。 */
+  int16_t roll_d10;   /**< 横滚角，单位 0.1°。 */
+  int16_t temp_d10;   /**< 芯片温度，单位 0.1℃。 */
+} menu_imu_data_t;
+
 /**
  * @brief 根据菜单模型绘制当前同级菜单页到 LCD 帧缓存。
  * @param items 完整菜单项数组。
@@ -73,5 +84,19 @@ void menu_view_user_timer_12(uint32_t seconds, bool running);
  * @return 无。
  */
 void menu_view_user_timer_12_refresh(uint32_t seconds, bool running);
+
+/**
+ * @brief 整页绘制 IMU 姿态页面。
+ * @param imu IMU 采样数据；NULL 或 valid=false 时显示读取失败。
+ * @return 无。
+ */
+void menu_view_user_imu_angle_9(const menu_imu_data_t *imu);
+
+/**
+ * @brief 只重绘 IMU 页面的数值区，避免整屏刷新。
+ * @param imu IMU 采样数据。
+ * @return 无。
+ */
+void menu_view_user_imu_angle_9_refresh(const menu_imu_data_t *imu);
 
 #endif

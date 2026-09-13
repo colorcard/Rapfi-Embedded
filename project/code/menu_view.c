@@ -1,5 +1,6 @@
 #include "menu_view.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "zf_device_lcd_fonts.h"
@@ -287,6 +288,64 @@ void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
   draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
                    "Param View");
   menu_view_user_param_view_11_refresh(voltage_mv, adc_raw, uptime_s);
+  draw_safe_string(
+      MENU_VIEW_SAFE_MARGIN,
+      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
+                 ASCII_Font20.Height),
+      "BACK: return");
+}
+
+/**
+ * @brief 绘制一行带符号的 0.1 单位数值。
+ * @param label 前缀标签（不含数值）。
+ * @param value_d10 数值，单位 0.1。
+ * @param y 文字逻辑纵坐标。
+ * @return 无。
+ */
+static void draw_signed_d10(const char *label, int16_t value_d10, uint16_t y)
+{
+  char text[24];        /**< 组装后的显示字符串。 */
+  int32_t value = value_d10; /**< 提升到 32 位，避免取负溢出。 */
+
+  if (value < 0) {
+    (void)snprintf(text, sizeof(text), "%s-%ld.%ld", label,
+                   (long)((-value) / 10), (long)((-value) % 10));
+  } else {
+    (void)snprintf(text, sizeof(text), "%s%ld.%ld", label,
+                   (long)(value / 10), (long)(value % 10));
+  }
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, y, text);
+}
+
+void menu_view_user_imu_angle_9_refresh(const menu_imu_data_t *imu)
+{
+  char text[28]; /**< 组装后的显示字符串。 */
+
+  /* 先用背景色覆盖数值区，避免新文本比旧文本短时留下残字。 */
+  lcd_fb_fill_rect(MENU_VIEW_SAFE_MARGIN, 50,
+                   (uint16_t)(lcd_get_width() - 2U * MENU_VIEW_SAFE_MARGIN),
+                   140U, MENU_COLOR_BACKGROUND);
+
+  if ((imu == NULL) || !imu->valid) {
+    draw_safe_string(MENU_VIEW_SAFE_MARGIN, 58U, "IMU read fail");
+    return;
+  }
+
+  draw_signed_d10("Pitch: ", imu->pitch_d10, 54U);
+  draw_signed_d10("Roll : ", imu->roll_d10, 90U);
+  (void)snprintf(text, sizeof(text), "Gz   : %d", (int)imu->gyro[2]);
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 126U, text);
+  draw_signed_d10("Temp : ", imu->temp_d10, 162U);
+}
+
+void menu_view_user_imu_angle_9(const menu_imu_data_t *imu)
+{
+  lcd_fb_clear(MENU_COLOR_BACKGROUND);
+  lcd_fb_set_font(&ASCII_Font20);
+  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
+  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
+  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN, "IMU Angle");
+  menu_view_user_imu_angle_9_refresh(imu);
   draw_safe_string(
       MENU_VIEW_SAFE_MARGIN,
       (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -

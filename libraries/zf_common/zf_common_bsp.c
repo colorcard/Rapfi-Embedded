@@ -88,7 +88,8 @@ zf_status_t bsp_init(void)
   status = bsp_collect(status, nrf24l01_init());
 #endif
 #if (BSP_ENABLE_IMU660RA != 0U)
-  status = bsp_collect(status, imu660ra_init());
+  /* IMU 属可选外设：初始化失败不阻断整机，由菜单页面提示读取错误。 */
+  (void)imu660ra_init();
 #endif
 #if (BSP_ENABLE_SERVO != 0U)
   status = bsp_collect(status, servo_init());

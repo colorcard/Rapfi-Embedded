@@ -1,10 +1,14 @@
 #include "menu_user.h"
 
+#include <math.h>
+
+#include "menu_view.h"
+#include "zf_common_debug.h"
+#include "zf_device_imu660ra.h"
 #include "zf_device_lcd_user.h"
 #include "zf_device_power.h"
 #include "zf_driver_adc.h"
 #include "zf_driver_rtc.h"
-#include "menu_view.h"
 
 static void menu_user_key_remap_test(menu_action_enum action);
 static void menu_user_placeholder(menu_action_enum action);
@@ -12,6 +16,8 @@ static void menu_user_param_view(menu_action_enum action);
 static void menu_user_param_view_poll(void);
 static void menu_user_timer(menu_action_enum action);
 static void menu_user_timer_poll(void);
+static void menu_user_imu_angle(menu_action_enum action);
+static void menu_user_imu_angle_poll(void);
 
 /** @brief 按键映射测试页面显示的可增减测试值。 */
 static int32_t key_test_value;
@@ -29,6 +35,12 @@ static uint32_t timer_base;
 static uint32_t timer_last_value;
 /** @brief true 表示计时器页已进入（区分进入时的 OK 与后续按键）。 */
 static bool timer_page_entered;
+/** @brief IMU 页面显示数据。 */
+static menu_imu_data_t imu_data;
+/** @brief IMU 页面最近一次采样的 HAL 毫秒时基。 */
+static uint32_t imu_last_tick;
+/** @brief IMU 调试打印最近一次输出的 HAL 毫秒时基。 */
+static uint32_t imu_debug_tick;
 
 /*
  * 菜单层级规划：
@@ -42,7 +54,7 @@ static menu_item_t user_menu_items[] = {
     {11, -1, "Param View", menu_user_param_view, menu_user_param_view_poll},
     {12, -1, "Timer", menu_user_timer, menu_user_timer_poll},
     {8,  -1, "Key Test",   menu_user_key_remap_test, NULL},
-    {9,  -1, "IMU Angle",  menu_user_placeholder, NULL},
+    {9,  -1, "IMU Angle",  menu_user_imu_angle, menu_user_imu_angle_poll},
     {10, -1, "Motor Cal",  menu_user_placeholder, NULL},
     /*
      * 挂载模板页面示例：
@@ -64,6 +76,8 @@ void menu_user_init(void)
   timer_base = 0U;
   timer_last_value = 0U;
   timer_page_entered = false;
+  imu_last_tick = 0U;
+  imu_debug_tick = 0U;
 }
 
 /**
@@ -318,6 +332,97 @@ static void menu_user_timer(menu_action_enum action)
 
   timer_last_value = menu_user_timer_elapsed();
   menu_view_user_timer_12(timer_last_value, timer_running);
+  menu_request_refresh();
+}
+
+/**
+ * @brief 读取一次 IMU660RA 并换算姿态角与温度。
+ * @return 无。
+ * @note 读写失败时把 valid 置 false，由页面提示读取错误。
+ */
+static void menu_user_imu_update(void)
+{
+  int16_t acc[3];
+  int16_t gyro[3];
+  int16_t temperature = 0;
+
+  if ((imu660ra_read_accel(acc) != ZF_OK) ||
+      (imu660ra_read_gyro(gyro) != ZF_OK)) {
+    imu_data.valid = false;
+    return;
+  }
+
+  for (uint8_t i = 0U; i < 3U; ++i) {
+    imu_data.acc[i] = acc[i];
+    imu_data.gyro[i] = gyro[i];
+  }
+
+  /* 由重力分量解算俯仰/横滚角，系数 57.29578*10 直接得到 0.1°。 */
+  {
+    float ax = (float)acc[0];
+    float ay = (float)acc[1];
+    float az = (float)acc[2];
+
+    imu_data.pitch_d10 = (int16_t)lroundf(
+        atan2f(-ax, sqrtf(ay * ay + az * az)) * 572.9578f);
+    imu_data.roll_d10 = (int16_t)lroundf(atan2f(ay, az) * 572.9578f);
+  }
+
+  if (imu660ra_read_temperature(&temperature) == ZF_OK) {
+    /* 摄氏度 = 23 + raw/512，转 0.1℃：230 + raw*10/512。 */
+    imu_data.temp_d10 = (int16_t)(230 + ((int32_t)temperature * 10) / 512);
+  } else {
+    imu_data.temp_d10 = 0;
+  }
+
+  imu_data.valid = true;
+}
+
+/**
+ * @brief IMU 姿态页的按键处理函数。
+ * @param action 本次按键动作。
+ * @return 无。
+ */
+static void menu_user_imu_angle(menu_action_enum action)
+{
+  if ((action == MENU_ACTION_BACK) || (action == MENU_ACTION_BACK_LONG)) {
+    menu_exit_function();
+    return;
+  }
+
+  imu_last_tick = HAL_GetTick();
+  imu_debug_tick = imu_last_tick;
+  menu_user_imu_update();
+  menu_view_user_imu_angle_9(&imu_data);
+  menu_request_refresh();
+}
+
+/**
+ * @brief IMU 姿态页的周期刷新回调。
+ * @return 无。
+ * @note 采样限频到 10 Hz；每秒经调试串口输出一次原始值，便于无屏核对。
+ */
+static void menu_user_imu_angle_poll(void)
+{
+  uint32_t now = HAL_GetTick();
+
+  if ((uint32_t)(now - imu_last_tick) < 100U) {
+    return;
+  }
+  imu_last_tick = now;
+  menu_user_imu_update();
+
+  if ((uint32_t)(now - imu_debug_tick) >= 1000U) {
+    imu_debug_tick = now;
+    debug_printf("IMU A=%d,%d,%d G=%d,%d,%d P=%d R=%d T=%d valid=%d\r\n",
+                 (int)imu_data.acc[0], (int)imu_data.acc[1],
+                 (int)imu_data.acc[2], (int)imu_data.gyro[0],
+                 (int)imu_data.gyro[1], (int)imu_data.gyro[2],
+                 (int)imu_data.pitch_d10, (int)imu_data.roll_d10,
+                 (int)imu_data.temp_d10, (int)imu_data.valid);
+  }
+
+  menu_view_user_imu_angle_9_refresh(&imu_data);
   menu_request_refresh();
 }
 

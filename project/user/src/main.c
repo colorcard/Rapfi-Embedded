@@ -24,6 +24,23 @@ int main(void)
   }
 
   debug_init();
+
+  /* 上电 IMU 自检：等待首帧数据后打印，便于确认 I2C 接线。 */
+  {
+    int16_t imu_acc[3];
+    int16_t imu_gyro[3];
+
+    system_delay_ms(100);
+    if ((imu660ra_read_accel(imu_acc) == ZF_OK) &&
+        (imu660ra_read_gyro(imu_gyro) == ZF_OK)) {
+      debug_printf("IMU A=%d,%d,%d G=%d,%d,%d\r\n", (int)imu_acc[0],
+                   (int)imu_acc[1], (int)imu_acc[2], (int)imu_gyro[0],
+                   (int)imu_gyro[1], (int)imu_gyro[2]);
+    } else {
+      debug_printf("IMU read fail\r\n");
+    }
+  }
+
   lcd_init(LCD_DIRECTION_LANDSCAPE);
   menu_init(50U);
   last_report = HAL_GetTick();
