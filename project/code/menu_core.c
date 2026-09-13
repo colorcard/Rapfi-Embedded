@@ -2,7 +2,6 @@
 
 #include <stddef.h>
 
-#include "zf_device_lcd_user.h"
 #include "menu_user.h"
 #include "menu_view.h"
 #include "stm32g4xx_hal.h"
@@ -133,10 +132,8 @@ static void menu_service_refresh(void)
   }
 
   last_refresh_tick = now;
-  if (refresh_requested) {
-    refresh_requested = false;
-    (void)lcd_update();
-  }
+  /* 画面刷新由 LVGL 的 lv_timer_handler 完成，这里只维护周期时基。 */
+  refresh_requested = false;
 }
 
 /**
@@ -154,7 +151,6 @@ void menu_init(uint32_t period_ms)
   refresh_requested = false;
   menu_key_init();
   menu_draw();
-  (void)lcd_update();
   refresh_requested = false;
   last_refresh_tick = HAL_GetTick();
 }

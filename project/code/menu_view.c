@@ -1,354 +1,266 @@
 #include "menu_view.h"
 
+#include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
 
-#include "zf_device_lcd_fonts.h"
-#include "zf_device_lcd_user.h"
-
-#define MENU_VIEW_MAX_ROWS       5U   /**< 单页最多显示的菜单行数。 */
-#define MENU_VIEW_ITEM_HEIGHT    36U  /**< 每个菜单项占用的垂直像素。 */
-#define MENU_VIEW_SAFE_MARGIN    16U  /**< 圆角窗口四周的安全边距。 */
+#include "lvgl.h"
 
 /*
- * 高对比深色配色（对比度经 WCAG 校验）：
- *   普通文字/卡片 7.1:1，选中文字/卡片 8.2:1，选中块/背景 7.5:1。
+ * 高对比深色配色，与旧帧缓存版本保持一致：
+ * 背景 #20242C、卡片 #4A525E、文字 #F0F3F7、选中 #F2A33C、选中文字 #241A08。
  */
-#define MENU_COLOR_BACKGROUND    0x2125U /**< 深灰蓝页面背景 #20242C。 */
-#define MENU_COLOR_ITEM          0x4A8BU /**< 稍亮的石板灰普通卡片 #4A525E。 */
-#define MENU_COLOR_TEXT          0xF79EU /**< 近白色普通文字 #F0F3F7。 */
-#define MENU_COLOR_SELECTED      0xF507U /**< 琥珀色选中卡片 #F2A33C。 */
-#define MENU_COLOR_SELECTED_TEXT 0x20C1U /**< 近黑色选中文字 #241A08。 */
+#define UI_COLOR_BG      lv_color_hex(0x20242CU)
+#define UI_COLOR_ITEM    lv_color_hex(0x4A525EU)
+#define UI_COLOR_TEXT    lv_color_hex(0xF0F3F7U)
+#define UI_COLOR_SEL     lv_color_hex(0xF2A33CU)
+#define UI_COLOR_SEL_TXT lv_color_hex(0x241A08U)
+#define UI_COLOR_HINT    lv_color_hex(0xA0A6B0U)
+
+/** @brief 页面内的数值标签（最多四个，供各页刷新函数复用）。 */
+static lv_obj_t *s_value_label[4];
 
 /**
- * @brief 计算文字在圆角安全区内允许显示的字符数。
- * @param text 待显示的零结尾字符串。
- * @param x 文字起点的逻辑横坐标。
- * @return 不越过右侧安全边界的字符数量。
+ * @brief 清空当前屏幕并重置数值标签缓存，作为新页面的画布。
+ * @return 当前活动屏幕。
  */
-static size_t safe_text_length(const char *text, uint16_t x)
+static lv_obj_t *view_reset(void)
 {
-  uint16_t usable_width; /**< 起点至右侧安全边界的可用像素宽度。 */
-  size_t length;         /**< 输入字符串的实际字符数量。 */
-  size_t max_chars;      /**< 当前字体和可用宽度允许的字符数量。 */
+  lv_obj_t *screen = lv_scr_act();
+  uint32_t i;
 
-  if ((text == NULL) ||
-      (x >= (uint16_t)(lcd_get_width() - MENU_VIEW_SAFE_MARGIN))) {
-    return 0U;
+  lv_obj_clean(screen);
+  for (i = 0U; i < 4U; ++i) {
+    s_value_label[i] = NULL;
   }
-
-  usable_width = (uint16_t)(lcd_get_width() - MENU_VIEW_SAFE_MARGIN - x);
-  max_chars = usable_width / ASCII_Font20.Width;
-  length = strlen(text);
-  return length < max_chars ? length : max_chars;
+  lv_obj_set_style_bg_color(screen, UI_COLOR_BG, LV_PART_MAIN);
+  lv_obj_set_style_text_color(screen, UI_COLOR_TEXT, LV_PART_MAIN);
+  return screen;
 }
 
 /**
- * @brief 裁切并绘制一行不会越过右侧安全边界的文字。
- * @param x 文字起点逻辑横坐标。
- * @param y 文字起点逻辑纵坐标。
- * @param text 待绘制字符串。
- * @return 无。
+ * @brief 创建页面标题。
+ * @param screen 父屏幕。
+ * @param text 标题文字。
+ * @return 标题标签对象。
  */
-static void draw_safe_string(uint16_t x, uint16_t y, const char *text)
+static lv_obj_t *view_title(lv_obj_t *screen, const char *text)
 {
-  char clipped[32]; /**< 保存裁切后、保证零结尾的临时显示字符串。 */
-  /* length 同时受安全边界和临时缓冲区容量限制。 */
-  size_t length = safe_text_length(text, x);
-
-  if (length >= sizeof(clipped)) {
-    length = sizeof(clipped) - 1U;
-  }
-  if ((text != NULL) && (length > 0U)) {
-    memcpy(clipped, text, length);
-  }
-  clipped[length] = '\0';
-  lcd_fb_draw_string((int16_t)x, (int16_t)y, clipped);
+  lv_obj_t *label = lv_label_create(screen);
+  lv_label_set_text(label, text);
+  lv_obj_set_style_text_color(label, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 8);
+  return label;
 }
 
 /**
- * @brief 使用水平扫描线向帧缓存绘制实心圆角矩形。
- * @param x 矩形左上角逻辑横坐标。
- * @param y 矩形左上角逻辑纵坐标。
- * @param width 矩形宽度，单位像素。
- * @param height 矩形高度，单位像素。
- * @param radius 圆角半径，单位像素。
- * @param color RGB565 填充颜色。
+ * @brief 创建一行左对齐说明文字。
+ * @param screen 父屏幕。
+ * @param text 文字内容，可为 NULL。
+ * @param y 逻辑纵坐标。
+ * @return 标签对象。
+ */
+static lv_obj_t *view_line(lv_obj_t *screen, const char *text, int32_t y)
+{
+  lv_obj_t *label = lv_label_create(screen);
+  if (text != NULL) {
+    lv_label_set_text(label, text);
+  }
+  lv_obj_set_style_text_color(label, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_align(label, LV_ALIGN_TOP_LEFT, 14, y);
+  return label;
+}
+
+/**
+ * @brief 创建底部返回提示。
+ * @param screen 父屏幕。
+ * @param text 提示文字。
  * @return 无。
  */
-static void fill_rounded_rect(uint16_t x, uint16_t y, uint16_t width,
-                              uint16_t height, uint16_t radius,
-                              uint16_t color)
+static void view_hint(lv_obj_t *screen, const char *text)
 {
-  if ((width == 0U) || (height == 0U)) {
+  lv_obj_t *label = lv_label_create(screen);
+  lv_label_set_text(label, text);
+  lv_obj_set_style_text_color(label, UI_COLOR_HINT, LV_PART_MAIN);
+  lv_obj_align(label, LV_ALIGN_BOTTOM_LEFT, 14, -8);
+}
+
+/**
+ * @brief 用 printf 语法更新标签文字（借标准库格式化，避免 LVGL 格式限制）。
+ * @param label 目标标签，NULL 时忽略。
+ * @param format 格式字符串。
+ * @param ... 可变参数。
+ * @return 无。
+ */
+static void view_set_text(lv_obj_t *label, const char *format, ...)
+{
+  char buffer[48];
+  va_list args;
+
+  if ((label == NULL) || (format == NULL)) {
     return;
   }
-  if ((uint32_t)radius * 2U > width) {
-    radius = width / 2U;
-  }
-  if ((uint32_t)radius * 2U > height) {
-    radius = height / 2U;
-  }
-
-  lcd_fb_fill_rect((int16_t)(x + radius), (int16_t)y,
-                  (uint16_t)(width - 2U * radius), height, color);
-  lcd_fb_fill_rect((int16_t)x, (int16_t)(y + radius), width,
-                  (uint16_t)(height - 2U * radius), color);
-
-  for (uint16_t row = 0U; row < radius; ++row) {
-    /* dy 表示当前扫描线到圆角圆心的纵向距离。 */
-    uint32_t dy = radius - row;
-    /* inset 是根据圆方程求得的扫描线左右缩进像素。 */
-    uint16_t inset = 0U;
-    while (((uint32_t)inset * inset + dy * dy) >
-           (uint32_t)radius * radius) {
-      ++inset;
-    }
-    lcd_fb_fill_rect((int16_t)(x + inset), (int16_t)(y + row),
-                    (uint16_t)(width - 2U * inset), 1U, color);
-    lcd_fb_fill_rect((int16_t)(x + inset),
-                    (int16_t)(y + height - 1U - row),
-                    (uint16_t)(width - 2U * inset), 1U, color);
-  }
+  va_start(args, format);
+  (void)vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+  lv_label_set_text(label, buffer);
 }
 
-/**
- * @brief 绘制当前菜单项所在的菜单页面。
- * @param items 完整菜单项数组。
- * @param item_count 数组元素数量。
- * @param current_item 当前选中的菜单项。
- * @return 无。
- */
 void menu_view_system_navigation_common(const menu_item_t *items,
                                        size_t item_count,
                                        const menu_item_t *current_item)
 {
-  const menu_item_t *siblings[16]; /**< 当前层级同级菜单项的临时索引表。 */
-  size_t sibling_count = 0U;    /**< 已收集的同级菜单项数量。 */
-  size_t selected_index = 0U;   /**< 当前项在同级索引表中的位置。 */
-  /* 根据逻辑屏幕高度和圆角边距计算实际可见行数。 */
-  uint16_t visible_rows =
-      (lcd_get_height() - 2U * MENU_VIEW_SAFE_MARGIN) /
-      MENU_VIEW_ITEM_HEIGHT;
+  lv_obj_t *screen;
+  lv_obj_t *list;
+  size_t i;
 
   if ((items == NULL) || (current_item == NULL)) {
     return;
   }
-  if (visible_rows > MENU_VIEW_MAX_ROWS) {
-    visible_rows = MENU_VIEW_MAX_ROWS;
-  }
-  if (visible_rows == 0U) {
-    visible_rows = 1U;
-  }
 
-  for (size_t i = 0U; (i < item_count) && (sibling_count < 16U); ++i) {
-    if (items[i].parent_id == current_item->parent_id) {
-      if (&items[i] == current_item) {
-        selected_index = sibling_count;
-      }
-      siblings[sibling_count++] = &items[i];
+  screen = view_reset();
+  view_title(screen, "STM32G474 Menu");
+
+  list = lv_obj_create(screen);
+  lv_obj_set_size(list, LV_PCT(92), LV_PCT(80));
+  lv_obj_align(list, LV_ALIGN_BOTTOM_MID, 0, -6);
+  lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(list, 2, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(list, 6, LV_PART_MAIN);
+  lv_obj_clear_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+
+  for (i = 0U; i < item_count; ++i) {
+    lv_obj_t *button;
+    lv_obj_t *label;
+    bool selected;
+
+    if (items[i].parent_id != current_item->parent_id) {
+      continue;
     }
-  }
+    selected = (&items[i] == current_item);
 
-  /* page_start 是当前分页在 siblings 中的首项下标。 */
-  size_t page_start = 0U;
-  if (selected_index >= visible_rows) {
-    page_start = selected_index - visible_rows + 1U;
-  }
+    button = lv_btn_create(list);
+    lv_obj_set_size(button, LV_PCT(100), 34);
+    lv_obj_set_style_bg_color(button, selected ? UI_COLOR_SEL : UI_COLOR_ITEM,
+                              LV_PART_MAIN);
+    lv_obj_set_style_radius(button, 8, LV_PART_MAIN);
 
-  lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font20);
-
-  for (uint16_t row = 0U;
-       (row < visible_rows) && ((page_start + row) < sibling_count);
-       ++row) {
-    const menu_item_t *item = siblings[page_start + row];
-    /* row_y 是当前菜单行在逻辑坐标系中的顶部位置。 */
-    uint16_t row_y =
-        (uint16_t)(MENU_VIEW_SAFE_MARGIN + row * MENU_VIEW_ITEM_HEIGHT);
-    /* 卡片宽度限制在左右各 16 像素的圆角安全区域内。 */
-    uint16_t card_width =
-        (uint16_t)(lcd_get_width() - 2U * MENU_VIEW_SAFE_MARGIN);
-
-    if (item == current_item) {
-      fill_rounded_rect(MENU_VIEW_SAFE_MARGIN, (uint16_t)(row_y + 3U),
-                        card_width, 30U, 10U, MENU_COLOR_SELECTED);
-      lcd_fb_set_pen_color(MENU_COLOR_SELECTED_TEXT);
-      lcd_fb_set_background_color(MENU_COLOR_SELECTED);
-    } else {
-      fill_rounded_rect(MENU_VIEW_SAFE_MARGIN, (uint16_t)(row_y + 3U),
-                        card_width, 30U, 10U, MENU_COLOR_ITEM);
-      lcd_fb_set_pen_color(MENU_COLOR_TEXT);
-      lcd_fb_set_background_color(MENU_COLOR_ITEM);
-    }
-    draw_safe_string((uint16_t)(MENU_VIEW_SAFE_MARGIN + 6U),
-                     (uint16_t)(row_y + 8U), item->name);
+    label = lv_label_create(button);
+    lv_label_set_text(label, items[i].name);
+    lv_obj_set_style_text_color(label,
+                                selected ? UI_COLOR_SEL_TXT : UI_COLOR_TEXT,
+                                LV_PART_MAIN);
+    lv_obj_center(label);
   }
 }
 
-/**
- * @brief 绘制包含标题、两行说明和返回提示的通用功能页。
- * @param title 页面标题。
- * @param line1 第一行说明。
- * @param line2 第二行说明。
- * @return 无。
- */
 void menu_view_user_function_page_common(const char *title, const char *line1,
                                        const char *line2)
 {
-  lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font20);
-  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
-  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN, title);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 58U, line1);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 94U, line2);
-  draw_safe_string(
-      MENU_VIEW_SAFE_MARGIN,
-      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font20.Height),
-      "BACK: return");
+  lv_obj_t *screen = view_reset();
+  view_title(screen, title);
+  (void)view_line(screen, line1, 56);
+  (void)view_line(screen, line2, 92);
+  view_hint(screen, "BACK: return");
 }
 
-/**
- * @brief 绘制按键测试计数页面。
- * @param value 需要显示的有符号计数值。
- * @return 无。
- */
 void menu_view_user_key_remap_test_8(int32_t value)
 {
-  lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font20);
-  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
-  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
-                   "Key Test");
-  lcd_printf(MENU_VIEW_SAFE_MARGIN, 58, "Value: %ld", (long)value);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 94U, "UP/DOWN, OK reset");
-  draw_safe_string(
-      MENU_VIEW_SAFE_MARGIN,
-      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font20.Height),
-      "BACK: return");
-}
-
-void menu_view_user_timer_12_refresh(uint32_t seconds, bool running)
-{
-  /* 时分秒拆开，避免依赖浮点格式化。 */
-  uint32_t hours = seconds / 3600U;
-  uint32_t minutes = (seconds / 60U) % 60U;
-  uint32_t secs = seconds % 60U;
-
-  /* 先覆盖数值区，防止旧内容残留。 */
-  lcd_fb_fill_rect(MENU_VIEW_SAFE_MARGIN, 50,
-                   (uint16_t)(lcd_get_width() - 2U * MENU_VIEW_SAFE_MARGIN),
-                   70U, MENU_COLOR_BACKGROUND);
-  lcd_printf(MENU_VIEW_SAFE_MARGIN, 54, "%02lu:%02lu:%02lu",
-             (unsigned long)hours, (unsigned long)minutes, (unsigned long)secs);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 92U, running ? "RUN" : "HOLD");
-}
-
-void menu_view_user_timer_12(uint32_t seconds, bool running)
-{
-  lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font20);
-  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
-  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN, "Timer");
-  menu_view_user_timer_12_refresh(seconds, running);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 124U, "OK start/stop");
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 158U, "UP: reset");
-  draw_safe_string(
-      MENU_VIEW_SAFE_MARGIN,
-      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font20.Height),
-      "BACK: exit");
+  lv_obj_t *screen = view_reset();
+  view_title(screen, "Key Test");
+  s_value_label[0] = view_line(screen, NULL, 56);
+  view_set_text(s_value_label[0], "Value: %ld", (long)value);
+  (void)view_line(screen, "UP/DOWN, OK reset", 92);
+  view_hint(screen, "BACK: return");
 }
 
 void menu_view_user_param_view_11_refresh(uint32_t voltage_mv, uint16_t adc_raw,
                                           uint32_t uptime_s)
 {
-  /* 先用背景色覆盖数值区，避免新文本比旧文本短时留下残字。 */
-  lcd_fb_fill_rect(MENU_VIEW_SAFE_MARGIN, 54, 
-                   (uint16_t)(lcd_get_width() - 2U * MENU_VIEW_SAFE_MARGIN),
-                   104U, MENU_COLOR_BACKGROUND);
-
-  lcd_printf(MENU_VIEW_SAFE_MARGIN, 58, "Volt:%lu mV", (unsigned long)voltage_mv);
-  lcd_printf(MENU_VIEW_SAFE_MARGIN, 94, "ADC :%u", (unsigned int)adc_raw);
-  lcd_printf(MENU_VIEW_SAFE_MARGIN, 130, "Up  :%lu s", (unsigned long)uptime_s);
+  view_set_text(s_value_label[0], "Volt: %lu mV", (unsigned long)voltage_mv);
+  view_set_text(s_value_label[1], "ADC : %u", (unsigned)adc_raw);
+  view_set_text(s_value_label[2], "Up  : %lu s", (unsigned long)uptime_s);
 }
 
 void menu_view_user_param_view_11(uint32_t voltage_mv, uint16_t adc_raw,
                                   uint32_t uptime_s)
 {
-  lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font20);
-  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
-  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN,
-                   "Param View");
+  lv_obj_t *screen = view_reset();
+  view_title(screen, "Param View");
+  s_value_label[0] = view_line(screen, NULL, 56);
+  s_value_label[1] = view_line(screen, NULL, 92);
+  s_value_label[2] = view_line(screen, NULL, 128);
+  view_hint(screen, "BACK: return");
   menu_view_user_param_view_11_refresh(voltage_mv, adc_raw, uptime_s);
-  draw_safe_string(
-      MENU_VIEW_SAFE_MARGIN,
-      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font20.Height),
-      "BACK: return");
+}
+
+void menu_view_user_timer_12_refresh(uint32_t seconds, bool running)
+{
+  uint32_t hours = seconds / 3600U;
+  uint32_t minutes = (seconds / 60U) % 60U;
+  uint32_t secs = seconds % 60U;
+
+  view_set_text(s_value_label[0], "%02lu:%02lu:%02lu", (unsigned long)hours,
+                (unsigned long)minutes, (unsigned long)secs);
+  if (s_value_label[1] != NULL) {
+    lv_label_set_text(s_value_label[1], running ? "RUN" : "HOLD");
+  }
+}
+
+void menu_view_user_timer_12(uint32_t seconds, bool running)
+{
+  lv_obj_t *screen = view_reset();
+  view_title(screen, "Timer");
+  s_value_label[0] = view_line(screen, NULL, 52);
+  s_value_label[1] = view_line(screen, NULL, 92);
+  (void)view_line(screen, "OK start/stop", 130);
+  (void)view_line(screen, "UP: reset", 160);
+  view_hint(screen, "BACK: exit");
+  menu_view_user_timer_12_refresh(seconds, running);
 }
 
 /**
- * @brief 绘制一行带符号的 0.1 单位数值。
- * @param label 前缀标签（不含数值）。
+ * @brief 以 0.1 单位的有符号数值更新标签（如角度、温度）。
+ * @param label 目标标签。
+ * @param prefix 前缀标签。
  * @param value_d10 数值，单位 0.1。
- * @param y 文字逻辑纵坐标。
  * @return 无。
  */
-static void draw_signed_d10(const char *label, int16_t value_d10, uint16_t y)
+static void view_set_signed_d10(lv_obj_t *label, const char *prefix,
+                                int16_t value_d10)
 {
-  char text[24];        /**< 组装后的显示字符串。 */
-  int32_t value = value_d10; /**< 提升到 32 位，避免取负溢出。 */
+  int32_t value = value_d10;
 
   if (value < 0) {
-    (void)snprintf(text, sizeof(text), "%s-%ld.%ld", label,
-                   (long)((-value) / 10), (long)((-value) % 10));
+    view_set_text(label, "%s-%ld.%ld", prefix, (long)((-value) / 10),
+                  (long)((-value) % 10));
   } else {
-    (void)snprintf(text, sizeof(text), "%s%ld.%ld", label,
-                   (long)(value / 10), (long)(value % 10));
+    view_set_text(label, "%s%ld.%ld", prefix, (long)(value / 10),
+                  (long)(value % 10));
   }
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, y, text);
 }
 
 void menu_view_user_imu_angle_9_refresh(const menu_imu_data_t *imu)
 {
-  char text[28]; /**< 组装后的显示字符串。 */
-
-  /* 先用背景色覆盖数值区，避免新文本比旧文本短时留下残字。 */
-  lcd_fb_fill_rect(MENU_VIEW_SAFE_MARGIN, 50,
-                   (uint16_t)(lcd_get_width() - 2U * MENU_VIEW_SAFE_MARGIN),
-                   140U, MENU_COLOR_BACKGROUND);
-
   if ((imu == NULL) || !imu->valid) {
-    draw_safe_string(MENU_VIEW_SAFE_MARGIN, 58U, "IMU read fail");
+    view_set_text(s_value_label[0], "IMU read fail");
     return;
   }
-
-  draw_signed_d10("Pitch: ", imu->pitch_d10, 54U);
-  draw_signed_d10("Roll : ", imu->roll_d10, 90U);
-  (void)snprintf(text, sizeof(text), "Gz   : %d", (int)imu->gyro[2]);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, 126U, text);
-  draw_signed_d10("Temp : ", imu->temp_d10, 162U);
+  view_set_signed_d10(s_value_label[0], "Pitch: ", imu->pitch_d10);
+  view_set_signed_d10(s_value_label[1], "Roll : ", imu->roll_d10);
+  view_set_text(s_value_label[2], "Gz   : %d", (int)imu->gyro[2]);
+  view_set_signed_d10(s_value_label[3], "Temp : ", imu->temp_d10);
 }
 
 void menu_view_user_imu_angle_9(const menu_imu_data_t *imu)
 {
-  lcd_fb_clear(MENU_COLOR_BACKGROUND);
-  lcd_fb_set_font(&ASCII_Font20);
-  lcd_fb_set_pen_color(MENU_COLOR_TEXT);
-  lcd_fb_set_background_color(MENU_COLOR_BACKGROUND);
-  draw_safe_string(MENU_VIEW_SAFE_MARGIN, MENU_VIEW_SAFE_MARGIN, "IMU Angle");
+  lv_obj_t *screen = view_reset();
+  view_title(screen, "IMU Angle");
+  s_value_label[0] = view_line(screen, NULL, 52);
+  s_value_label[1] = view_line(screen, NULL, 86);
+  s_value_label[2] = view_line(screen, NULL, 120);
+  s_value_label[3] = view_line(screen, NULL, 154);
+  view_hint(screen, "BACK: return");
   menu_view_user_imu_angle_9_refresh(imu);
-  draw_safe_string(
-      MENU_VIEW_SAFE_MARGIN,
-      (uint16_t)(lcd_get_height() - MENU_VIEW_SAFE_MARGIN -
-                 ASCII_Font20.Height),
-      "BACK: return");
 }

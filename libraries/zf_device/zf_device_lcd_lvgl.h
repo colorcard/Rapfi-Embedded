@@ -21,12 +21,6 @@ void lcd_lvgl_init(void);
  */
 void lcd_lvgl_handler(void);
 
-/**
- * @brief 创建一个用于验证 LVGL 的演示界面。
- * @return 无。
- */
-void lcd_lvgl_demo(void);
-
 #ifdef __cplusplus
 }
 #endif

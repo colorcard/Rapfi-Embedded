@@ -89,6 +89,8 @@
 #define LCD_HEIGHT          280U
 #define LCD_X_OFFSET        0U
 #define LCD_Y_OFFSET        20U
+/* ST7789 MADCTL(0x36)：0x00 正常，0xC0=MX|MY 旋转 180°，0x60/0xA0=90°/270°。 */
+#define LCD_MADCTL          0xC0U
 #define LCD_TIMEOUT_MS      1000U
 #define LCD_CS_PORT         GPIOD
 #define LCD_CS_PIN          GPIO_PIN_11

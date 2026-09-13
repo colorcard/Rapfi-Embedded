@@ -18,12 +18,4 @@ void menu_user_init(void);
  */
 menu_item_t *menu_user_get_items(size_t *item_count);
 
-/**
- * @brief 用户自定义功能页面的可编译模板。
- * @param action 菜单核心分发的按键动作。
- * @return 无。
- * @note 默认未挂载；复制或直接挂载到 user_menu_items 即可使用。
- */
-void menu_user_page_template(menu_action_enum action);
-
 #endif
