@@ -58,9 +58,23 @@ def main() -> int:
     strip_bytes = w * src_rows_per_strip
     assert n_strips * strip_bytes == frame_bytes, (n_strips, strip_bytes, frame_bytes)
 
-    ser = serial.Serial(args.port, 115200, timeout=1)
+    ser = serial.Serial(args.port, 115200, timeout=1, write_timeout=10)
     ser.dtr = True
     ser.rts = True
+
+    import queue as _queue
+    import threading
+    wq = _queue.Queue(maxsize=8)
+
+    def _writer():
+        while True:
+            item = wq.get()
+            if item is None:
+                break
+            ser.write(item)
+
+    wt = threading.Thread(target=_writer, daemon=True)
+    wt.start()
 
     print(f"文件: {args.file}  {total} 帧  {w}x{h}  {fps:g}fps  "
           f"格式 0x{fmt_byte:02X} {'整帧' if args.full else 'delta'}",
@@ -90,14 +104,21 @@ def main() -> int:
                         mask |= (1 << i)
 
             start = time.time()
-            ser.write(magic)
-            ser.write(struct.pack("<H", mask))
-            if mask:
-                blocks = frame.reshape(n_strips, -1)
-                for i in range(n_strips):
-                    if mask & (1 << i):
-                        ser.write(blocks[i].tobytes())
-            ser.flush()
+            if mask == 0:
+                wq.put(magic + struct.pack("<H", 0))
+            else:
+                blocks = frame.reshape(n_strips, strip_bytes)
+                changed = [i for i in range(n_strips) if mask & (1 << i)]
+                out = bytearray(4 + len(changed) * strip_bytes)
+                out[0] = MAGIC0
+                out[1] = fmt_byte
+                out[2] = (mask & 0xFF)
+                out[3] = (mask >> 8)
+                pos = 4
+                for i in changed:
+                    out[pos:pos + strip_bytes] = blocks[i].tobytes()
+                    pos += strip_bytes
+                wq.put(out)
             prev = frame
             idx += 1
             sent += 1
@@ -110,6 +131,8 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        wq.put(None)
+        wt.join()
         ser.close()
     print(f"\n共发送 {sent} 帧，用时 {time.time()-t0:.1f}s", file=sys.stderr)
     return 0
