@@ -22,23 +22,20 @@ extern PCD_HandleTypeDef hpcd_USB_FS;
 #define VIDEO_STRIP_PX    (LCD_WIDTH * VIDEO_STRIP_ROWS)
 /** @brief 帧头魔数首字节；次字节 0x5A..0x5D 选择格式。 */
 #define VIDEO_MAGIC_0     0xA5U
-/** @brief 视频判定窗口：收到帧后多久内视为“正在推流”。 */
+/** @brief 视频判定窗口。 */
 #define VIDEO_ACTIVE_MS   300U
-/** @brief 支持的帧格式数量（次字节 0x5A + idx）。 */
+/** @brief 支持的帧格式数量。 */
 #define VIDEO_FMT_COUNT   4U
+/** @brief 整帧缓冲大小（字节）：按最大可缓冲帧（RGB332 全屏 67200）预留。 */
+#define VIDEO_FRAME_CAP   (LCD_WIDTH * LCD_HEIGHT)
 
-/**
- * @brief 帧格式描述。
- * bpp=2 表示 RGB565（大端），bpp=1 表示 RGB332。
- * scale 表示 MCU 侧对其做整数倍放大（1=原分辨率，2=放大到整屏）。
- */
+/** @brief 帧格式描述：bpp=2 为 RGB565(大端)，1 为 RGB332；scale 为整数放大。 */
 typedef struct {
   uint8_t bpp;
   uint16_t src_w;
   uint16_t scale;
 } video_fmt_t;
 
-/** @brief A5 5A / A5 5B / A5 5C / A5 5D 对应的格式。 */
 static const video_fmt_t s_fmt[VIDEO_FMT_COUNT] = {
   {2U, LCD_WIDTH, 1U},        /* A5 5A: RGB565 280x240 */
   {1U, LCD_WIDTH, 1U},        /* A5 5B: RGB332 280x240 */
@@ -50,16 +47,20 @@ static uint8_t s_rx_fifo[USB_RX_FIFO_SIZE];
 static volatile uint32_t s_rx_head;
 static volatile uint32_t s_rx_tail;
 
-static uint8_t s_src[VIDEO_STRIP_PX * 2U]; /* 源条带缓冲（最大=RGB565 满宽）*/
-static uint8_t s_dst[VIDEO_STRIP_PX * 2U]; /* 展开后的输出条带（RGB565 大端）*/
-static uint16_t s_src_target;
+static uint8_t s_frame[VIDEO_FRAME_CAP];  /* 整帧缓冲（用于消撕裂） */
+static uint8_t s_src[VIDEO_STRIP_PX * 2U];/* 渐进模式源条带 */
+static uint8_t s_dst[VIDEO_STRIP_PX * 2U];/* 展开后的输出条带（RGB565 大端）*/
+static uint32_t s_frame_bytes;            /* 本帧总字节数 */
+static uint32_t s_frame_fill;             /* 已收字节数 */
+static uint16_t s_src_target;             /* 渐进模式：单条带源字节数 */
 static uint16_t s_src_fill;
 static uint16_t s_frame_row;
 static uint8_t s_video_state;
 static uint8_t s_fmt_index;
+static uint8_t s_buffered;                /* 1=整帧缓冲后一次刷屏 */
 static uint8_t s_magic;
 static volatile uint32_t s_last_frame_tick;
-/** @brief 调试用：完成的帧数 / 写入的条带数 / 收到的字节数（供 SWD 观测）。 */
+/** @brief 调试用计数。 */
 volatile uint32_t g_video_frame_cnt;
 volatile uint32_t g_video_strip_cnt;
 volatile uint32_t g_video_rx_bytes;
@@ -81,10 +82,6 @@ void zf_usb_cdc_on_rx(const uint8_t *data, uint32_t len)
   }
 }
 
-/**
- * @brief 从环形缓冲取一个字节。
- * @return 1 表示取到，0 表示空。
- */
 static int usb_rx_get(uint8_t *byte)
 {
   if (s_rx_tail == s_rx_head) {
@@ -96,39 +93,96 @@ static int usb_rx_get(uint8_t *byte)
 }
 
 /**
- * @brief 把当前源条带展开/放大为整行宽 280、16 行的 RGB565 大端输出。
+ * @brief 将 RGB332 字节或 RGB565 大端字节转为 RGB565 值。
+ */
+static uint16_t video_pixel(const uint8_t *p, uint8_t bpp)
+{
+  if (bpp == 2U) {
+    return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
+  }
+  {
+    uint8_t c = p[0];
+    uint8_t r3 = (uint8_t)((c >> 5) & 7U);
+    uint8_t g3 = (uint8_t)((c >> 2) & 7U);
+    uint8_t b2 = (uint8_t)(c & 3U);
+    return (uint16_t)(((uint16_t)((r3 << 2) | (r3 >> 1)) << 11)
+                      | ((uint16_t)((g3 << 3) | g3) << 5)
+                      | (uint16_t)((b2 << 3) | (b2 << 1) | (b2 >> 1)));
+  }
+}
+
+/**
+ * @brief 从整帧缓冲展开并写入一个 16 行条带到屏幕。
+ * @param out_row 目标起始行。
  * @return 无。
  */
-static void video_expand(void)
+static void video_write_strip(const uint8_t *frame, uint16_t out_row)
 {
   const video_fmt_t *fmt = &s_fmt[s_fmt_index];
   uint16_t oy;
 
   for (oy = 0U; oy < VIDEO_STRIP_ROWS; ++oy) {
-    uint16_t sy = (uint16_t)(oy / fmt->scale);
+    uint16_t oy_abs = (uint16_t)(out_row + oy);
+    uint16_t sy = (uint16_t)(oy_abs / fmt->scale);
     uint16_t ox;
     for (ox = 0U; ox < LCD_WIDTH; ++ox) {
       uint16_t sx = (uint16_t)(ox / fmt->scale);
       uint32_t si = ((uint32_t)sy * fmt->src_w + sx) * (uint32_t)fmt->bpp;
-      uint16_t col;
-      if (fmt->bpp == 2U) {
-        col = (uint16_t)(((uint16_t)s_src[si] << 8) | s_src[si + 1U]);
-      } else {
-        uint8_t c = s_src[si];
-        uint8_t r3 = (uint8_t)((c >> 5) & 7U);
-        uint8_t g3 = (uint8_t)((c >> 2) & 7U);
-        uint8_t b2 = (uint8_t)(c & 3U);
-        col = (uint16_t)(((uint16_t)((r3 << 2) | (r3 >> 1)) << 11)
-                         | ((uint16_t)((g3 << 3) | g3) << 5)
-                         | (uint16_t)((b2 << 3) | (b2 << 1) | (b2 >> 1)));
-      }
-      {
-        uint32_t di = ((uint32_t)oy * LCD_WIDTH + ox) * 2U;
-        s_dst[di] = (uint8_t)(col >> 8);
-        s_dst[di + 1U] = (uint8_t)col;
-      }
+      uint16_t col = video_pixel(&frame[si], fmt->bpp);
+      uint32_t di = ((uint32_t)oy * LCD_WIDTH + ox) * 2U;
+      s_dst[di] = (uint8_t)(col >> 8);
+      s_dst[di + 1U] = (uint8_t)col;
     }
   }
+
+  if (lcd_hw_start_area(0U, out_row, LCD_WIDTH, VIDEO_STRIP_ROWS) == 0) {
+    (void)spi_write_8bit_array(SPI_1, s_dst, (uint16_t)(VIDEO_STRIP_PX * 2U),
+                               1000U);
+    lcd_hw_end_area();
+  }
+  ++g_video_strip_cnt;
+}
+
+/**
+ * @brief 整帧收齐后一次性把 15 个条带连续刷入屏幕（最小化撕裂）。
+ */
+static void video_present_buffered(void)
+{
+  uint16_t row;
+
+  for (row = 0U; row < LCD_HEIGHT; row = (uint16_t)(row + VIDEO_STRIP_ROWS)) {
+    video_write_strip(s_frame, row);
+  }
+}
+
+/**
+ * @brief 渐进模式：收满一个源条带即刷一条（内存不足以缓冲整帧时使用）。
+ */
+static void video_present_progressive(void)
+{
+  const video_fmt_t *fmt = &s_fmt[s_fmt_index];
+  uint16_t src_rows = (uint16_t)(VIDEO_STRIP_ROWS / fmt->scale);
+  uint16_t oy;
+
+  for (oy = 0U; oy < VIDEO_STRIP_ROWS; ++oy) {
+    uint16_t sy = (uint16_t)(oy / fmt->scale);
+    uint16_t ox;
+    (void)src_rows;
+    for (ox = 0U; ox < LCD_WIDTH; ++ox) {
+      uint16_t sx = (uint16_t)(ox / fmt->scale);
+      uint32_t si = ((uint32_t)sy * fmt->src_w + sx) * (uint32_t)fmt->bpp;
+      uint16_t col = video_pixel(&s_src[si], fmt->bpp);
+      uint32_t di = ((uint32_t)oy * LCD_WIDTH + ox) * 2U;
+      s_dst[di] = (uint8_t)(col >> 8);
+      s_dst[di + 1U] = (uint8_t)col;
+    }
+  }
+  if (lcd_hw_start_area(0U, s_frame_row, LCD_WIDTH, VIDEO_STRIP_ROWS) == 0) {
+    (void)spi_write_8bit_array(SPI_1, s_dst, (uint16_t)(VIDEO_STRIP_PX * 2U),
+                               1000U);
+    lcd_hw_end_area();
+  }
+  ++g_video_strip_cnt;
 }
 
 uint32_t usb_cdc_read(uint8_t *data, uint32_t max_length)
@@ -179,18 +233,21 @@ void usb_cdc_task(void)
   while (usb_rx_get(&byte) != 0) {
     ++g_video_rx_bytes;
     if (s_video_state == 0U) {
-      /* 等待帧头：A5 5A..5D。 */
       if (s_magic == 0U) {
         if (byte == VIDEO_MAGIC_0) {
           s_magic = 1U;
         }
       } else if ((byte >= 0x5AU) && (byte < (0x5AU + VIDEO_FMT_COUNT))) {
         const video_fmt_t *fmt = &s_fmt[byte - 0x5AU];
-        uint16_t src_rows = (uint16_t)(VIDEO_STRIP_ROWS / fmt->scale);
+        uint16_t src_rows = (uint16_t)(LCD_HEIGHT / fmt->scale);
         s_fmt_index = (uint8_t)(byte - 0x5AU);
-        s_src_target = (uint16_t)(fmt->src_w * src_rows * fmt->bpp);
+        s_frame_bytes = (uint32_t)fmt->src_w * src_rows * fmt->bpp;
+        s_src_target = (uint16_t)(fmt->src_w * (VIDEO_STRIP_ROWS / fmt->scale)
+                                  * fmt->bpp);
+        s_buffered = (s_frame_bytes <= (uint32_t)sizeof(s_frame)) ? 1U : 0U;
         s_video_state = 1U;
         s_frame_row = 0U;
+        s_frame_fill = 0U;
         s_src_fill = 0U;
         s_magic = 0U;
       } else {
@@ -199,23 +256,29 @@ void usb_cdc_task(void)
       continue;
     }
 
-    s_src[s_src_fill] = byte;
-    ++s_src_fill;
-
-    if (s_src_fill >= s_src_target) {
-      video_expand();
-      if (lcd_hw_start_area(0U, s_frame_row, LCD_WIDTH, VIDEO_STRIP_ROWS) == 0) {
-        (void)spi_write_8bit_array(SPI_1, s_dst,
-                                   (uint16_t)(VIDEO_STRIP_PX * 2U), 1000U);
-        lcd_hw_end_area();
+    if (s_buffered != 0U) {
+      if (s_frame_fill < (uint32_t)sizeof(s_frame)) {
+        s_frame[s_frame_fill] = byte;
       }
-      ++g_video_strip_cnt;
-      s_frame_row = (uint16_t)(s_frame_row + VIDEO_STRIP_ROWS);
-      s_src_fill = 0U;
-      if (s_frame_row >= LCD_HEIGHT) {
-        s_video_state = 0U; /* 一帧结束，等待下一帧魔数 */
+      ++s_frame_fill;
+      if (s_frame_fill >= s_frame_bytes) {
+        video_present_buffered();
+        s_video_state = 0U;
         s_last_frame_tick = HAL_GetTick();
         ++g_video_frame_cnt;
+      }
+    } else {
+      s_src[s_src_fill] = byte;
+      ++s_src_fill;
+      if (s_src_fill >= s_src_target) {
+        video_present_progressive();
+        s_frame_row = (uint16_t)(s_frame_row + VIDEO_STRIP_ROWS);
+        s_src_fill = 0U;
+        if (s_frame_row >= LCD_HEIGHT) {
+          s_video_state = 0U;
+          s_last_frame_tick = HAL_GetTick();
+          ++g_video_frame_cnt;
+        }
       }
     }
   }
