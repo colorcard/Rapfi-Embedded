@@ -25,22 +25,22 @@ import time
 W, H = 280, 240
 
 
-def fit_image(im, mode: str):
+def fit_image(im, mode: str, tw: int, th: int):
     from PIL import Image  # noqa: WPS433
 
     iw, ih = im.size
     if mode == "stretch":
-        return im.resize((W, H)).convert("RGB")
-    scale = max(W / iw, H / ih) if mode == "crop" else min(W / iw, H / ih)
+        return im.resize((tw, th)).convert("RGB")
+    scale = max(tw / iw, th / ih) if mode == "crop" else min(tw / iw, th / ih)
     resized = im.resize((max(1, round(iw * scale)), max(1, round(ih * scale))),
                         Image.BILINEAR).convert("RGB")
     if mode == "crop":
-        left = (resized.width - W) // 2
-        top = (resized.height - H) // 2
-        return resized.crop((left, top, left + W, top + H))
-    canvas = Image.new("RGB", (W, H), (0, 0, 0))
-    canvas.paste(resized, ((W - resized.width) // 2,
-                           (H - resized.height) // 2))
+        left = (resized.width - tw) // 2
+        top = (resized.height - th) // 2
+        return resized.crop((left, top, left + tw, top + th))
+    canvas = Image.new("RGB", (tw, th), (0, 0, 0))
+    canvas.paste(resized, ((tw - resized.width) // 2,
+                           (th - resized.height) // 2))
     return canvas
 
 
@@ -51,6 +51,8 @@ def main() -> int:
     ap.add_argument("--fit", choices=["pad", "crop", "stretch"], default="crop")
     ap.add_argument("--rgb332", action="store_true",
                     help="用 RGB332（1 字节/像素，数据减半，帧率更高）")
+    ap.add_argument("--scale", type=int, choices=[1, 2], default=1,
+                    help="源分辨率相对 280x240 的缩小倍数（2=半分辨率，MCU 放大 2x）")
     args = ap.parse_args()
 
     try:
@@ -61,7 +63,10 @@ def main() -> int:
         print(f"缺少依赖：{exc}（需要 pyserial / pillow / numpy）", file=sys.stderr)
         return 1
 
-    magic = b"\xA5\x5B" if args.rgb332 else b"\xA5\x5A"
+    tw, th = W // args.scale, H // args.scale
+    # 魔数次字节：0x5A=RGB565全, 0x5B=RGB332全, 0x5C=RGB332半, 0x5D=RGB565半
+    fmt_index = (0 if args.scale == 1 else 2) + (1 if args.rgb332 else 0)
+    magic = bytes([0xA5, 0x5A + fmt_index])
 
     ser = serial.Serial(args.port, 115200, timeout=1)
     ser.dtr = True
@@ -79,7 +84,7 @@ def main() -> int:
                            check=False)
             try:
                 with Image.open(tmp) as im:
-                    arr = np.asarray(fit_image(im, args.fit))
+                    arr = np.asarray(fit_image(im, args.fit, tw, th))
             except Exception:
                 continue
             if args.rgb332:
