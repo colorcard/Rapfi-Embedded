@@ -37,13 +37,17 @@ def build_filter(fit: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="USB CDC video stream to ST7789")
-    ap.add_argument("video", help="输入视频文件")
+    ap.add_argument("video", nargs="?", help="输入视频文件（--screen 时可省略）")
     ap.add_argument("--port", default="/dev/cu.usbmodem2088388236341",
                     help="USB CDC 串口设备")
     ap.add_argument("--fps", type=float, default=10.0, help="推流帧率")
     ap.add_argument("--fit", choices=["pad", "crop", "stretch"], default="pad",
                     help="画面适配方式")
     ap.add_argument("--loop", action="store_true", help="循环播放")
+    ap.add_argument("--screen", action="store_true",
+                    help="采集电脑画面（macOS avfoundation 屏幕录制）")
+    ap.add_argument("--screen-device", default="4",
+                    help="avfoundation 屏幕设备号（见 ffmpeg -list_devices）")
     args = ap.parse_args()
 
     try:
@@ -52,10 +56,20 @@ def main() -> int:
         print("缺少 pyserial，请先 pip install pyserial", file=sys.stderr)
         return 1
 
-    cmd = ["ffmpeg", "-v", "error"]
-    if args.loop:
-        cmd += ["-stream_loop", "-1"]
-    cmd += ["-i", args.video, "-vf", build_filter(args.fit),
+    if args.screen:
+        cap_fps = max(1, int(round(args.fps)))
+        cmd = ["ffmpeg", "-v", "error", "-f", "avfoundation",
+               "-pixel_format", "uyvy422", "-capture_cursor", "1",
+               "-framerate", str(cap_fps),
+               "-i", f"{args.screen_device}:none"]
+    else:
+        if not args.video:
+            ap.error("需要提供视频文件，或使用 --screen")
+        cmd = ["ffmpeg", "-v", "error"]
+        if args.loop:
+            cmd += ["-stream_loop", "-1"]
+        cmd += ["-i", args.video]
+    cmd += ["-vf", build_filter(args.fit),
             "-pix_fmt", "rgb565le", "-f", "rawvideo", "-"]
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
