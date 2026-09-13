@@ -221,13 +221,14 @@ void HAL_UART_MspInit(UART_HandleTypeDef *uartHandle)
       error_handler();
     }
     __HAL_RCC_USART1_CLK_ENABLE();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-    GPIO_InitStruct.Pin = GPIO_PIN_4 | GPIO_PIN_5;
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /* ST-10 核心板“SWD和USART1接口”使用 PA9=TX / PA10=RX。 */
+    GPIO_InitStruct.Pin = GPIO_PIN_9 | GPIO_PIN_10;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
     HAL_NVIC_SetPriority(USART1_IRQn, UART_IRQ_PREEMPT_PRIORITY, UART_IRQ_SUB_PRIORITY);
     HAL_NVIC_EnableIRQ(USART1_IRQn);
   } else if (uartHandle->Instance == USART2) {
@@ -270,7 +271,7 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef *uartHandle)
   if (uartHandle->Instance == USART1) {
     __HAL_RCC_USART1_CLK_DISABLE();
     HAL_NVIC_DisableIRQ(USART1_IRQn);
-    HAL_GPIO_DeInit(GPIOC, GPIO_PIN_4 | GPIO_PIN_5);
+    HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9 | GPIO_PIN_10);
   } else if (uartHandle->Instance == USART2) {
     __HAL_RCC_USART2_CLK_DISABLE();
     HAL_NVIC_DisableIRQ(USART2_IRQn);
