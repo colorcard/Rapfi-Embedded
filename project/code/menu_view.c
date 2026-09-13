@@ -33,7 +33,7 @@ static lv_obj_t *s_timer_bar;          /**< 秒进度条。 */
  */
 static lv_obj_t *view_reset(void)
 {
-  lv_obj_t *screen = lv_scr_act();
+  lv_obj_t *screen = lv_screen_active();
   uint32_t i;
 
   lv_obj_clean(screen);
@@ -152,7 +152,7 @@ void menu_view_system_navigation_common(const menu_item_t *items,
     }
     selected = (&items[i] == current_item);
 
-    button = lv_btn_create(list);
+    button = lv_button_create(list);
     lv_obj_set_size(button, LV_PCT(100), 30);
     lv_obj_set_style_bg_color(button, selected ? UI_COLOR_SEL : UI_COLOR_ITEM,
                               LV_PART_MAIN);
