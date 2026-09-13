@@ -32,7 +32,7 @@
 #define I2C_FALL_TIME_NS        10U     /* TODO: 按上拉/总线电容确认。 */
 
 /* ------------------------------- SPI ---------------------------------- */
-#define SPI_DEFAULT_PRESCALER   SPI_BAUDRATEPRESCALER_4 /* /4 = 42.5MHz（PCLK2=170MHz），LCD 刷屏用。 */
+#define SPI_DEFAULT_PRESCALER   SPI_BAUDRATEPRESCALER_2 /* /2 = 85MHz（PCLK2=170MHz），缩短刷屏时间以减轻撕裂。 */
 #define SPI_DEFAULT_CPOL        SPI_POLARITY_LOW        /* TODO: 按器件确认。 */
 #define SPI_DEFAULT_CPHA        SPI_PHASE_1EDGE         /* TODO: 按器件确认。 */
 
