@@ -111,6 +111,19 @@ void TIM1_TRG_COM_TIM17_IRQHandler(void)
 }
 
 /**
+ * @brief DMA1 通道 3 中断：SPI1 TX（LCD 刷屏）DMA 完成。
+ * @return 无。
+ */
+void DMA1_Channel3_IRQHandler(void)
+{
+  DMA_HandleTypeDef *hdma = spi_dma_tx_handle(SPI_1);
+
+  if (hdma != NULL) {
+    HAL_DMA_IRQHandler(hdma);
+  }
+}
+
+/**
  * @brief 定时器周期完成回调，用于 10 ms 按键扫描。
  * @param htim 触发周期完成事件的定时器句柄。
  * @return 无。

@@ -4,6 +4,8 @@
 
 /** @brief SPI 句柄，由本模块统一持有。 */
 static SPI_HandleTypeDef s_spi[SPI_NUM];
+/** @brief 各 SPI 的 TX DMA 句柄。 */
+static DMA_HandleTypeDef s_spi_tx_dma[SPI_NUM];
 
 /**
  * @brief 获取 SPI 外设实例。
@@ -118,6 +120,24 @@ zf_status_t spi_transfer_8bit(spi_index_enum bus, const uint8_t *tx, uint8_t *rx
                                              timeout_ms));
 }
 
+zf_status_t spi_write_dma(spi_index_enum bus, const uint8_t *data,
+                          uint16_t length)
+{
+  SPI_HandleTypeDef *handle = spi_handle(bus);
+
+  if ((handle == NULL) || (data == NULL) || (length == 0U)) {
+    return ZF_INVALID_PARAM;
+  }
+  return zf_from_hal(HAL_SPI_Transmit_DMA(handle, (uint8_t *)data, length));
+}
+
+DMA_HandleTypeDef *spi_dma_tx_handle(spi_index_enum bus)
+{
+  SPI_HandleTypeDef *handle = spi_handle(bus);
+
+  return (handle == NULL) ? NULL : handle->hdmatx;
+}
+
 void HAL_SPI_MspInit(SPI_HandleTypeDef *spiHandle)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -131,6 +151,25 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *spiHandle)
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF5_SPI1;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    /* SPI1 TX DMA（DMA1_Channel3）：用于 LCD 刷屏，DMA 完成后触发 TxCplt。 */
+    __HAL_RCC_DMA1_CLK_ENABLE();
+    __HAL_RCC_DMAMUX1_CLK_ENABLE();
+    s_spi_tx_dma[SPI_1].Instance = DMA1_Channel3;
+    s_spi_tx_dma[SPI_1].Init.Request = DMA_REQUEST_SPI1_TX;
+    s_spi_tx_dma[SPI_1].Init.Direction = DMA_MEMORY_TO_PERIPH;
+    s_spi_tx_dma[SPI_1].Init.PeriphInc = DMA_PINC_DISABLE;
+    s_spi_tx_dma[SPI_1].Init.MemInc = DMA_MINC_ENABLE;
+    s_spi_tx_dma[SPI_1].Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    s_spi_tx_dma[SPI_1].Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    s_spi_tx_dma[SPI_1].Init.Mode = DMA_NORMAL;
+    s_spi_tx_dma[SPI_1].Init.Priority = DMA_PRIORITY_HIGH;
+    if (HAL_DMA_Init(&s_spi_tx_dma[SPI_1]) != HAL_OK) {
+      error_handler();
+    }
+    __HAL_LINKDMA(spiHandle, hdmatx, s_spi_tx_dma[SPI_1]);
+    HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 1U, 0U);
+    HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
   } else if (spiHandle->Instance == SPI2) {
     __HAL_RCC_SPI2_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -148,6 +187,8 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef *spiHandle)
 {
   if (spiHandle->Instance == SPI1) {
     __HAL_RCC_SPI1_CLK_DISABLE();
+    HAL_NVIC_DisableIRQ(DMA1_Channel3_IRQn);
+    (void)HAL_DMA_DeInit(spiHandle->hdmatx);
     HAL_GPIO_DeInit(GPIOB, GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5);
   } else if (spiHandle->Instance == SPI2) {
     __HAL_RCC_SPI2_CLK_DISABLE();

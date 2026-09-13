@@ -67,16 +67,46 @@ static HAL_StatusTypeDef lcd_command(uint8_t command, const uint8_t *data, uint1
  * @param height 窗口高度，单位为像素
  * @return HAL_OK 设置成功，其他值表示通信失败
  */
-static HAL_StatusTypeDef lcd_set_window(uint16_t x, uint16_t y,
-                                        uint16_t width, uint16_t height)
+/**
+ * @brief 设置数据/命令选择引脚。
+ * @param is_data 非零表示数据，零表示命令。
+ * @return 无。
+ */
+static void lcd_dc(uint8_t is_data)
+{
+  gpio_set_level(LCD_CS_PORT, LCD_DC_PIN,
+                 (is_data != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+/**
+ * @brief 在片选保持期间发送命令或数据。
+ * @param is_data 非零表示数据，零表示命令。
+ * @param data 数据缓冲区。
+ * @param size 字节数。
+ * @return HAL_OK 表示成功。
+ */
+static HAL_StatusTypeDef lcd_tx_held(uint8_t is_data, const uint8_t *data,
+                                     uint16_t size)
+{
+  lcd_dc(is_data);
+  return (spi_write_8bit_array(LCD_SPI_INDEX, data, size, LCD_TIMEOUT_MS)
+          == ZF_OK) ? HAL_OK : HAL_ERROR;
+}
+
+int lcd_hw_start_area(uint16_t x, uint16_t y, uint16_t width, uint16_t height)
 {
   uint16_t x2 = (uint16_t)(x + width - 1U);
   uint16_t y2 = (uint16_t)(y + height - 1U);
   uint16_t caset1, caset2, raset1, raset2;
   uint8_t area[4];
+  uint8_t command;
+
+  if ((width == 0U) || (height == 0U)) {
+    return -1;
+  }
 
 #if ((LCD_MADCTL & 0x20U) != 0U)
-  /* 横屏（MV）：CASET 变为长轴（行）地址，由 x 驱动并带 20 行偏移；RASET 为列地址。 */
+  /* 横屏（MV）：CASET 为长轴（行）地址，由 x 驱动并带 20 行偏移；RASET 为列地址。 */
   caset1 = (uint16_t)(x + LCD_Y_OFFSET);
   caset2 = (uint16_t)(x2 + LCD_Y_OFFSET);
   raset1 = (uint16_t)(y + LCD_X_OFFSET);
@@ -88,14 +118,49 @@ static HAL_StatusTypeDef lcd_set_window(uint16_t x, uint16_t y,
   raset2 = (uint16_t)(y2 + LCD_Y_OFFSET);
 #endif
 
+  lcd_cs(GPIO_PIN_RESET);
+
+  command = 0x2AU;
   area[0] = (uint8_t)(caset1 >> 8); area[1] = (uint8_t)caset1;
   area[2] = (uint8_t)(caset2 >> 8); area[3] = (uint8_t)caset2;
-  if (lcd_command(0x2AU, area, sizeof(area)) != HAL_OK) return HAL_ERROR;
+  if ((lcd_tx_held(0U, &command, 1U) != HAL_OK) ||
+      (lcd_tx_held(1U, area, sizeof(area)) != HAL_OK)) {
+    lcd_cs(GPIO_PIN_SET);
+    return -1;
+  }
 
+  command = 0x2BU;
   area[0] = (uint8_t)(raset1 >> 8); area[1] = (uint8_t)raset1;
   area[2] = (uint8_t)(raset2 >> 8); area[3] = (uint8_t)raset2;
-  if (lcd_command(0x2BU, area, sizeof(area)) != HAL_OK) return HAL_ERROR;
-  return lcd_command(0x2CU, NULL, 0U);
+  if ((lcd_tx_held(0U, &command, 1U) != HAL_OK) ||
+      (lcd_tx_held(1U, area, sizeof(area)) != HAL_OK)) {
+    lcd_cs(GPIO_PIN_SET);
+    return -1;
+  }
+
+  command = 0x2CU;
+  if (lcd_tx_held(0U, &command, 1U) != HAL_OK) {
+    lcd_cs(GPIO_PIN_SET);
+    return -1;
+  }
+
+  lcd_dc(1U); /* 后续为像素数据。 */
+  return 0;
+}
+
+int lcd_hw_send_pixels_dma(const void *pixels, uint32_t length)
+{
+  if ((pixels == NULL) || (length == 0U) || (length > 0xFFFFU)) {
+    return -1;
+  }
+  lcd_dc(1U);
+  return (spi_write_dma(LCD_SPI_INDEX, (const uint8_t *)pixels,
+                        (uint16_t)length) == ZF_OK) ? 0 : -1;
+}
+
+void lcd_hw_end_area(void)
+{
+  lcd_cs(GPIO_PIN_SET);
 }
 
 /**
@@ -163,7 +228,7 @@ int lcd_hw_write_area_rgb565(uint16_t x, uint16_t y, uint16_t width,
   if (pixels == NULL || width == 0U || height == 0U ||
       x >= LCD_HW_WIDTH || y >= LCD_HW_HEIGHT ||
       width > LCD_HW_WIDTH - x || height > LCD_HW_HEIGHT - y) return -1;
-  if (lcd_set_window(x, y, width, height) != HAL_OK) return -1;
+  if (lcd_hw_start_area(x, y, width, height) != 0) return -1;
 
   for (row = 0U; row < height; ++row) {
     for (column = 0U; column < width; ++column) {
@@ -171,7 +236,11 @@ int lcd_hw_write_area_rgb565(uint16_t x, uint16_t y, uint16_t width,
       row_data[column * 2U] = (uint8_t)(color >> 8);
       row_data[column * 2U + 1U] = (uint8_t)color;
     }
-    if (lcd_write(1U, row_data, (uint16_t)(width * 2U)) != HAL_OK) return -1;
+    if (lcd_tx_held(1U, row_data, (uint16_t)(width * 2U)) != HAL_OK) {
+      lcd_hw_end_area();
+      return -1;
+    }
   }
+  lcd_hw_end_area();
   return 0;
 }

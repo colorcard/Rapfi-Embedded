@@ -51,6 +51,24 @@ zf_status_t spi_write_8bit_array(spi_index_enum bus, const uint8_t *data,
                               uint16_t length, uint32_t timeout_ms);
 
 /**
+ * @brief 以 DMA 方式发送数据（非阻塞）。
+ * @param bus SPI 逻辑编号。
+ * @param data 待发送缓冲区，须在 DMA 完成前保持有效。
+ * @param length 字节数。
+ * @return ZF_OK 表示已启动，其他值表示失败。
+ * @note 完成事件通过 HAL_SPI_TxCpltCallback 通知。
+ */
+zf_status_t spi_write_dma(spi_index_enum bus, const uint8_t *data,
+                          uint16_t length);
+
+/**
+ * @brief 获取指定 SPI 的 TX DMA 句柄。
+ * @param bus SPI 逻辑编号。
+ * @return DMA 句柄指针；该总线未配置 DMA 时返回 NULL。
+ */
+DMA_HandleTypeDef *spi_dma_tx_handle(spi_index_enum bus);
+
+/**
  * @brief 阻塞接收数据（发送 0xFF 填充时钟）。
  * @param bus SPI 逻辑编号。
  * @param data 接收缓冲区。

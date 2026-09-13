@@ -34,6 +34,32 @@ int lcd_hw_init(void);
 int lcd_hw_write_area_rgb565(uint16_t x, uint16_t y, uint16_t width,
                            uint16_t height, const uint16_t *pixels);
 
+/**
+ * @brief 打开一个显示区域（拉低 CS、设置窗口、切到数据模式）。
+ * @param x 区域左上角横坐标。
+ * @param y 区域左上角纵坐标。
+ * @param width 宽度（像素）。
+ * @param height 高度（像素）。
+ * @return 0 成功，-1 失败。
+ * @note 调用后 CS 保持低电平，需用 lcd_hw_end_area() 结束。
+ */
+int lcd_hw_start_area(uint16_t x, uint16_t y, uint16_t width, uint16_t height);
+
+/**
+ * @brief 以 DMA 方式发送像素数据（非阻塞）。
+ * @param pixels 像素缓冲区（RGB565，高字节先发）。
+ * @param length 字节数。
+ * @return 0 已启动，-1 失败。
+ * @note 完成事件在 HAL_SPI_TxCpltCallback 中通知，届时调用 lcd_hw_end_area()。
+ */
+int lcd_hw_send_pixels_dma(const void *pixels, uint32_t length);
+
+/**
+ * @brief 结束当前显示区域（拉高 CS）。
+ * @return 无。
+ */
+void lcd_hw_end_area(void);
+
 #ifdef __cplusplus
 }
 #endif
