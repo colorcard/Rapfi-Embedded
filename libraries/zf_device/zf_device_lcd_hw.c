@@ -224,11 +224,37 @@ int lcd_hw_write_area_rgb565(uint16_t x, uint16_t y, uint16_t width,
   static uint8_t row_data[LCD_HW_WIDTH * 2U];
   uint16_t row;
   uint16_t column;
+  uint16_t x2;
+  uint16_t y2;
+  uint16_t caset1, caset2, raset1, raset2;
+  uint8_t area[4];
 
   if (pixels == NULL || width == 0U || height == 0U ||
       x >= LCD_HW_WIDTH || y >= LCD_HW_HEIGHT ||
       width > LCD_HW_WIDTH - x || height > LCD_HW_HEIGHT - y) return -1;
-  if (lcd_hw_start_area(x, y, width, height) != 0) return -1;
+
+  x2 = (uint16_t)(x + width - 1U);
+  y2 = (uint16_t)(y + height - 1U);
+#if ((LCD_MADCTL & 0x20U) != 0U)
+  caset1 = (uint16_t)(x + LCD_Y_OFFSET);
+  caset2 = (uint16_t)(x2 + LCD_Y_OFFSET);
+  raset1 = (uint16_t)(y + LCD_X_OFFSET);
+  raset2 = (uint16_t)(y2 + LCD_X_OFFSET);
+#else
+  caset1 = (uint16_t)(x + LCD_X_OFFSET);
+  caset2 = (uint16_t)(x2 + LCD_X_OFFSET);
+  raset1 = (uint16_t)(y + LCD_Y_OFFSET);
+  raset2 = (uint16_t)(y2 + LCD_Y_OFFSET);
+#endif
+
+  area[0] = (uint8_t)(caset1 >> 8); area[1] = (uint8_t)caset1;
+  area[2] = (uint8_t)(caset2 >> 8); area[3] = (uint8_t)caset2;
+  if (lcd_command(0x2AU, area, sizeof(area)) != HAL_OK) return -1;
+
+  area[0] = (uint8_t)(raset1 >> 8); area[1] = (uint8_t)raset1;
+  area[2] = (uint8_t)(raset2 >> 8); area[3] = (uint8_t)raset2;
+  if (lcd_command(0x2BU, area, sizeof(area)) != HAL_OK) return -1;
+  if (lcd_command(0x2CU, NULL, 0U) != HAL_OK) return -1;
 
   for (row = 0U; row < height; ++row) {
     for (column = 0U; column < width; ++column) {
@@ -236,11 +262,7 @@ int lcd_hw_write_area_rgb565(uint16_t x, uint16_t y, uint16_t width,
       row_data[column * 2U] = (uint8_t)(color >> 8);
       row_data[column * 2U + 1U] = (uint8_t)color;
     }
-    if (lcd_tx_held(1U, row_data, (uint16_t)(width * 2U)) != HAL_OK) {
-      lcd_hw_end_area();
-      return -1;
-    }
+    if (lcd_write(1U, row_data, (uint16_t)(width * 2U)) != HAL_OK) return -1;
   }
-  lcd_hw_end_area();
   return 0;
 }

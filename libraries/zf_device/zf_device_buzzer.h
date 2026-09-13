@@ -1,6 +1,8 @@
 #ifndef _zf_device_buzzer_h_
 #define _zf_device_buzzer_h_
 
+#include <stdbool.h>
+
 #include "zf_common_bsp.h"
 
 #ifdef __cplusplus
@@ -8,15 +10,20 @@ extern "C" {
 #endif
 
 /**
- * @brief 初始化蜂鸣器并保持关闭。
+ * @brief 初始化蜂鸣器 PWM（PA1 = TIM2_CH2），初始静音。
  * @return 无。
- * @note 当前 PA1 按 GPIO 输出驱动晶体管；若后续确认需要 3 kHz 激励，
- *       再改为定时器 PWM 输出。
  */
 void buzzer_init(void);
 
 /**
- * @brief 打开蜂鸣器。
+ * @brief 以指定频率鸣叫（PWM，50% 占空比）。
+ * @param frequency_hz 频率，单位 Hz；0 表示不处理。
+ * @return 无。
+ */
+void buzzer_tone(uint32_t frequency_hz);
+
+/**
+ * @brief 以默认音调打开蜂鸣器。
  * @return 无。
  */
 void buzzer_on(void);
@@ -33,6 +40,12 @@ void buzzer_off(void);
  * @return 无。
  */
 void buzzer_beep(uint32_t duration_ms);
+
+/**
+ * @brief 查询蜂鸣器 PWM 是否初始化成功。
+ * @return true 表示可用。
+ */
+bool buzzer_is_ready(void);
 
 #ifdef __cplusplus
 }

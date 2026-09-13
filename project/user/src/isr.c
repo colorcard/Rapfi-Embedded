@@ -1,6 +1,5 @@
 #include "zf_common_headfile.h"
 #include "zf_common_fault.h"
-#include "menu_core.h"
 
 /******************************************************************************/
 /*                       Cortex-M4 处理器异常处理                              */
@@ -124,17 +123,22 @@ void DMA1_Channel3_IRQHandler(void)
 }
 
 /**
+ * @brief USB 低优先级中断：USB Device 事件。
+ * @return 无。
+ */
+void USB_LP_IRQHandler(void)
+{
+  usb_cdc_irq_handler();
+}
+
+/**
  * @brief 定时器周期完成回调，用于 10 ms 按键扫描。
  * @param htim 触发周期完成事件的定时器句柄。
  * @return 无。
  */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  if (htim == timer_get_handle(TIMER_17)) {
-#ifndef APP_LVGL_DEMO
-    menu_key_scan();
-#endif
-  }
+  (void)htim;
 }
 
 /**

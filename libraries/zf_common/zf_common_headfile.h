@@ -33,14 +33,12 @@
 #include "zf_device_buzzer.h"
 #include "zf_device_imu660ra.h"
 #include "zf_device_key.h"
-#include "zf_device_lcd_fonts.h"
 #include "zf_device_lcd_hw.h"
-#include "zf_device_lcd_image.h"
-#include "zf_device_lcd_user.h"
 #include "zf_device_led.h"
 #include "zf_device_nrf24l01.h"
 #include "zf_device_power.h"
 #include "zf_device_servo.h"
+#include "zf_device_usb_cdc.h"
 #include "zf_device_w25q128.h"
 
 #endif /* _zf_common_headfile_h_ */

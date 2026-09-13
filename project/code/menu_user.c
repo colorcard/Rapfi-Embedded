@@ -4,6 +4,7 @@
 
 #include "menu_view.h"
 #include "zf_common_debug.h"
+#include "zf_device_buzzer.h"
 #include "zf_device_imu660ra.h"
 #include "zf_device_power.h"
 #include "zf_driver_adc.h"
@@ -17,6 +18,9 @@ static void menu_user_timer(menu_action_enum action);
 static void menu_user_timer_poll(void);
 static void menu_user_imu_angle(menu_action_enum action);
 static void menu_user_imu_angle_poll(void);
+static void menu_user_buzzer(menu_action_enum action);
+static void menu_user_melody(menu_action_enum action);
+static void menu_user_melody_poll(void);
 
 /** @brief 按键映射测试页面显示的可增减测试值。 */
 static int32_t key_test_value;
@@ -38,6 +42,78 @@ static menu_imu_data_t imu_data;
 static uint32_t imu_last_tick;
 /** @brief IMU 调试打印最近一次输出的 HAL 毫秒时基。 */
 static uint32_t imu_debug_tick;
+/** @brief 蜂鸣器页当前音名索引。 */
+static uint32_t buzzer_note_index;
+/** @brief 蜂鸣器是否正在鸣叫。 */
+static bool buzzer_playing;
+/** @brief true 表示蜂鸣器页已进入。 */
+static bool buzzer_page_entered;
+
+/** @brief 音名与频率（十二平均律，A4=440Hz），范围 C4~B6。 */
+typedef struct {
+  const char *name;
+  uint32_t freq_hz;
+} buzzer_note_t;
+
+static const buzzer_note_t buzzer_notes[] = {
+  {"C4", 262},  {"C#4", 277}, {"D4", 294},  {"D#4", 311}, {"E4", 330},
+  {"F4", 349},  {"F#4", 370}, {"G4", 392},  {"G#4", 415}, {"A4", 440},
+  {"A#4", 466}, {"B4", 494},  {"C5", 523},  {"C#5", 554}, {"D5", 587},
+  {"D#5", 622}, {"E5", 659},  {"F5", 698},  {"F#5", 740}, {"G5", 784},
+  {"G#5", 831}, {"A5", 880},  {"A#5", 932}, {"B5", 988},  {"C6", 1047},
+  {"C#6", 1109}, {"D6", 1175}, {"D#6", 1245}, {"E6", 1319}, {"F6", 1397},
+  {"F#6", 1480}, {"G6", 1568}, {"G#6", 1661}, {"A6", 1760}, {"A#6", 1865},
+  {"B6", 1976},
+};
+
+#define BUZZER_NOTE_COUNT ((uint32_t)(sizeof(buzzer_notes) / sizeof(buzzer_notes[0])))
+#define BUZZER_NOTE_DEFAULT_INDEX 9U /* A4 */
+
+/**
+ * @brief 按频率查音名。
+ * @param freq 频率，单位 Hz。
+ * @return 音名字符串；未匹配时返回 "--"。
+ */
+static const char *note_name_from_freq(uint32_t freq)
+{
+  uint32_t i;
+
+  for (i = 0U; i < BUZZER_NOTE_COUNT; ++i) {
+    if (buzzer_notes[i].freq_hz == freq) {
+      return buzzer_notes[i].name;
+    }
+  }
+  return "--";
+}
+
+/** @brief 旋律音符：频率 + 时值（1=全音符，2=二分，4=四分，8=八分）。 */
+typedef struct {
+  uint16_t freq_hz;
+  uint16_t divider;
+} melody_note_t;
+
+/** @brief 测试曲《小星星》（4/4，每拍四分音符）。 */
+static const melody_note_t melody_star[] = {
+  {262, 4}, {262, 4}, {392, 4}, {392, 4}, {440, 4}, {440, 4}, {392, 2},
+  {349, 4}, {349, 4}, {330, 4}, {330, 4}, {294, 4}, {294, 4}, {262, 2},
+  {392, 4}, {392, 4}, {349, 4}, {349, 4}, {330, 4}, {330, 4}, {294, 2},
+  {392, 4}, {392, 4}, {349, 4}, {349, 4}, {330, 4}, {330, 4}, {294, 2},
+  {262, 4}, {262, 4}, {392, 4}, {392, 4}, {440, 4}, {440, 4}, {392, 2},
+  {349, 4}, {349, 4}, {330, 4}, {330, 4}, {294, 4}, {294, 4}, {262, 2},
+};
+
+#define MELODY_STAR_COUNT ((uint32_t)(sizeof(melody_star) / sizeof(melody_star[0])))
+/** @brief 速度（BPM）。 */
+#define MELODY_TEMPO     150U
+/** @brief 全音符时长，单位 ms。 */
+#define MELODY_WHOLE_MS  ((60000U * 4U) / MELODY_TEMPO)
+
+/** @brief 旋律页状态。 */
+static bool melody_playing;
+static bool melody_in_gap;
+static uint32_t melody_index;
+static uint32_t melody_note_start;
+static bool melody_page_entered;
 
 /*
  * 菜单层级规划：
@@ -52,6 +128,8 @@ static menu_item_t user_menu_items[] = {
     {12, -1, "Timer", menu_user_timer, menu_user_timer_poll},
     {8,  -1, "Key Test",   menu_user_key_remap_test, NULL},
     {9,  -1, "IMU Angle",  menu_user_imu_angle, menu_user_imu_angle_poll},
+    {13, -1, "Buzzer",     menu_user_buzzer, NULL},
+    {14, -1, "Melody",     menu_user_melody, menu_user_melody_poll},
     {10, -1, "Motor Cal",  menu_user_placeholder, NULL},
 };
 
@@ -70,6 +148,14 @@ void menu_user_init(void)
   timer_page_entered = false;
   imu_last_tick = 0U;
   imu_debug_tick = 0U;
+  buzzer_note_index = BUZZER_NOTE_DEFAULT_INDEX;
+  buzzer_playing = false;
+  buzzer_page_entered = false;
+  melody_playing = false;
+  melody_in_gap = false;
+  melody_index = 0U;
+  melody_note_start = 0U;
+  melody_page_entered = false;
 }
 
 /**
@@ -367,5 +453,169 @@ static void menu_user_timer_poll(void)
   }
   timer_last_value = elapsed;
   menu_view_user_timer_12_refresh(elapsed, timer_running);
+  menu_request_refresh();
+}
+
+/**
+ * @brief 蜂鸣器测试页的按键处理函数。
+ * @param action 本次按键动作。
+ * @return 无。
+ * @note 进入即初始化 PWM；UP/DOWN 切换音符，OK 开/关，BACK 退出并静音。
+ */
+static void menu_user_buzzer(menu_action_enum action)
+{
+  if (!buzzer_page_entered) {
+    /* 首次进入：初始化 PWM 并绘制，保持静音。 */
+    buzzer_page_entered = true;
+    buzzer_init();
+    buzzer_note_index = BUZZER_NOTE_DEFAULT_INDEX;
+    buzzer_playing = false;
+    buzzer_off();
+    menu_view_user_buzzer_13(buzzer_notes[buzzer_note_index].name,
+                             buzzer_notes[buzzer_note_index].freq_hz,
+                             buzzer_playing);
+    menu_request_refresh();
+    return;
+  }
+
+  switch (action) {
+    case MENU_ACTION_UP:
+    case MENU_ACTION_UP_LONG:
+      buzzer_note_index = (buzzer_note_index + 1U) % BUZZER_NOTE_COUNT;
+      if (buzzer_playing) {
+        buzzer_tone(buzzer_notes[buzzer_note_index].freq_hz);
+      }
+      break;
+
+    case MENU_ACTION_DOWN:
+    case MENU_ACTION_DOWN_LONG:
+      buzzer_note_index =
+          (buzzer_note_index + BUZZER_NOTE_COUNT - 1U) % BUZZER_NOTE_COUNT;
+      if (buzzer_playing) {
+        buzzer_tone(buzzer_notes[buzzer_note_index].freq_hz);
+      }
+      break;
+
+    case MENU_ACTION_OK:
+    case MENU_ACTION_OK_LONG:
+      buzzer_playing = !buzzer_playing;
+      if (buzzer_playing) {
+        buzzer_tone(buzzer_notes[buzzer_note_index].freq_hz);
+      } else {
+        buzzer_off();
+      }
+      break;
+
+    case MENU_ACTION_BACK:
+    case MENU_ACTION_BACK_LONG:
+      buzzer_off();
+      buzzer_playing = false;
+      buzzer_page_entered = false;
+      menu_exit_function();
+      return;
+
+    default:
+      break;
+  }
+
+  menu_view_user_buzzer_13(buzzer_notes[buzzer_note_index].name,
+                           buzzer_notes[buzzer_note_index].freq_hz,
+                           buzzer_playing);
+  menu_request_refresh();
+}
+
+/**
+ * @brief 从头开始播放测试曲。
+ * @return 无。
+ */
+static void menu_user_melody_start(void)
+{
+  melody_index = 0U;
+  melody_note_start = HAL_GetTick();
+  melody_playing = true;
+  melody_in_gap = false;
+  buzzer_tone(melody_star[0].freq_hz);
+  menu_view_user_melody_14(note_name_from_freq(melody_star[0].freq_hz), 1U,
+                           MELODY_STAR_COUNT, true);
+  menu_request_refresh();
+}
+
+/**
+ * @brief 旋律页的按键处理函数。
+ * @param action 本次按键动作。
+ * @return 无。
+ * @note 进入即开始播放；OK 重播，BACK 停止并退出。
+ */
+static void menu_user_melody(menu_action_enum action)
+{
+  if (!melody_page_entered) {
+    melody_page_entered = true;
+    buzzer_init();
+    menu_user_melody_start();
+    return;
+  }
+
+  switch (action) {
+    case MENU_ACTION_OK:
+    case MENU_ACTION_OK_LONG:
+      menu_user_melody_start();
+      break;
+
+    case MENU_ACTION_BACK:
+    case MENU_ACTION_BACK_LONG:
+      buzzer_off();
+      melody_playing = false;
+      melody_page_entered = false;
+      menu_exit_function();
+      return;
+
+    default:
+      break;
+  }
+}
+
+/**
+ * @brief 旋律页周期回调：按每个音符的时长推进播放。
+ * @return 无。
+ */
+static void menu_user_melody_poll(void)
+{
+  uint32_t now;
+  uint32_t duration;
+  uint32_t elapsed;
+
+  if (!melody_playing) {
+    return;
+  }
+  now = HAL_GetTick();
+  duration = MELODY_WHOLE_MS / (uint32_t)melody_star[melody_index].divider;
+  elapsed = (uint32_t)(now - melody_note_start);
+
+  if (elapsed < duration) {
+    /* 每个音符只发 90% 时长，留 10% 静音，避免连音发糊。 */
+    if ((!melody_in_gap) && (elapsed >= (duration * 9U / 10U))) {
+      buzzer_off();
+      melody_in_gap = true;
+    }
+    return;
+  }
+
+  ++melody_index;
+  if (melody_index >= MELODY_STAR_COUNT) {
+    melody_playing = false;
+    buzzer_off();
+    menu_view_user_melody_14_refresh(
+        note_name_from_freq(melody_star[MELODY_STAR_COUNT - 1U].freq_hz),
+        MELODY_STAR_COUNT, MELODY_STAR_COUNT, false);
+    menu_request_refresh();
+    return;
+  }
+
+  melody_note_start += duration;
+  melody_in_gap = false;
+  buzzer_tone(melody_star[melody_index].freq_hz);
+  menu_view_user_melody_14_refresh(
+      note_name_from_freq(melody_star[melody_index].freq_hz),
+      melody_index + 1U, MELODY_STAR_COUNT, true);
   menu_request_refresh();
 }

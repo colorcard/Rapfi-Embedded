@@ -83,6 +83,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${HAL_DIR}/stm32g4xx_hal_tim_ex.c
     ${HAL_DIR}/stm32g4xx_hal_uart.c
     ${HAL_DIR}/stm32g4xx_hal_uart_ex.c
+    ${HAL_DIR}/stm32g4xx_hal_pcd.c
+    ${HAL_DIR}/stm32g4xx_hal_pcd_ex.c
+    ${HAL_DIR}/stm32g4xx_ll_usb.c
 
     # 公共层
     ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_bsp.c
@@ -124,27 +127,27 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 # ---------------------------------------------------------------------------
-# 显示：LVGL（菜单界面渲染层）
-#   menu_core/key/user 负责菜单模型与按键，menu_view 用 LVGL 渲染。
+# 显示：仅 ST7789 硬件层
+#   本固件专注“Type-C USB 帧流 -> LCD”推屏，不编译 LVGL 与菜单。
 # ---------------------------------------------------------------------------
-message("UI: LVGL menu")
-file(GLOB_RECURSE LVGL_SOURCES CONFIGURE_DEPENDS
-     ${CMAKE_SOURCE_DIR}/libraries/third_party/lvgl/src/*.c)
-# 第三方库统一关闭告警，避免其风格与工程 -Wall -Wextra 冲突。
-set_source_files_properties(${LVGL_SOURCES} PROPERTIES COMPILE_OPTIONS -w)
+
+# ---------------------------------------------------------------------------
+# USB Device（Type-C 原生 USB CDC，串口帧流播放）
+# ---------------------------------------------------------------------------
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    ${LVGL_SOURCES}
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_lvgl.c
-    ${CMAKE_SOURCE_DIR}/project/code/menu_core.c
-    ${CMAKE_SOURCE_DIR}/project/code/menu_key.c
-    ${CMAKE_SOURCE_DIR}/project/code/menu_user.c
-    ${CMAKE_SOURCE_DIR}/project/code/menu_view.c
+    ${CMAKE_SOURCE_DIR}/libraries/third_party/STM32_USB_Device_Library/Core/Src/usbd_core.c
+    ${CMAKE_SOURCE_DIR}/libraries/third_party/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c
+    ${CMAKE_SOURCE_DIR}/libraries/third_party/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c
+    ${CMAKE_SOURCE_DIR}/libraries/third_party/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
+    ${CMAKE_SOURCE_DIR}/libraries/usb/usbd_conf.c
+    ${CMAKE_SOURCE_DIR}/libraries/usb/usbd_desc.c
+    ${CMAKE_SOURCE_DIR}/libraries/usb/usbd_cdc_if.c
+    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_usb_cdc.c
 )
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/libraries/third_party/lvgl
-)
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    LV_CONF_INCLUDE_SIMPLE
+    ${CMAKE_SOURCE_DIR}/libraries/usb
+    ${CMAKE_SOURCE_DIR}/libraries/third_party/STM32_USB_Device_Library/Core/Inc
+    ${CMAKE_SOURCE_DIR}/libraries/third_party/STM32_USB_Device_Library/Class/CDC/Inc
 )
 
 # ---------------------------------------------------------------------------

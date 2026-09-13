@@ -1,6 +1,4 @@
 #include "zf_common_headfile.h"
-#include "menu_core.h"
-#include "zf_device_lcd_lvgl.h"
 
 /** @brief 最近的电源电压采样值，单位毫伏；供 SWD 在线观测。 */
 volatile uint32_t g_power_voltage_mv;
@@ -10,13 +8,17 @@ volatile uint16_t g_power_adc_raw;
 /**
  * @brief 应用入口。
  * @return 不会返回。
- * @note 初始化顺序：HAL -> 时钟 -> 板级外设 -> 显示 -> 菜单。
+ * @note 本固件专注“Type-C USB 帧流 -> LCD 推屏”，不含 LVGL/菜单。
+ *       初始化顺序：HAL -> 时钟 -> 板级外设 -> ST7789 -> USB CDC。
  */
 int main(void)
 {
   uint32_t last_report;
   uint32_t voltage_mv;
   uint16_t adc_raw;
+
+  /* 让总线错误精确上报，便于定位非法访问。 */
+  (*(volatile uint32_t *)0xE000E008UL) |= (1UL << 1U);
 
   HAL_Init();
   clock_init();
@@ -25,31 +27,13 @@ int main(void)
   }
 
   debug_init();
-
-  /* 上电 IMU 自检：等待首帧数据后打印，便于确认 I2C 接线。 */
-  {
-    int16_t imu_acc[3];
-    int16_t imu_gyro[3];
-
-    system_delay_ms(100);
-    if ((imu660ra_read_accel(imu_acc) == ZF_OK) &&
-        (imu660ra_read_gyro(imu_gyro) == ZF_OK)) {
-      debug_printf("IMU A=%d,%d,%d G=%d,%d,%d\r\n", (int)imu_acc[0],
-                   (int)imu_acc[1], (int)imu_acc[2], (int)imu_gyro[0],
-                   (int)imu_gyro[1], (int)imu_gyro[2]);
-    } else {
-      debug_printf("IMU read fail\r\n");
-    }
-  }
-
   (void)lcd_hw_init();
-  lcd_lvgl_init();
-  menu_init(50U);
+  (void)usb_cdc_init();
   last_report = HAL_GetTick();
 
   while (1) {
-    menu_process();
-    lcd_lvgl_handler();
+    /* 接收并显示视频帧（条带 DMA/阻塞写入 ST7789）。 */
+    usb_cdc_task();
 
     /* 每秒通过调试串口上报一次电源电压，同时刷新供 SWD 观测的全局变量。 */
     if ((HAL_GetTick() - last_report) >= 1000U) {

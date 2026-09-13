@@ -290,6 +290,11 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *timHandle)
     GPIO_InitStruct.Pin = GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_6 | GPIO_PIN_7;
     GPIO_InitStruct.Alternate = GPIO_AF2_TIM2;
     HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+    /* 蜂鸣器：PA1 = TIM2_CH2（AF1），用于 PWM 音调输出。 */
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    GPIO_InitStruct.Pin = GPIO_PIN_1;
+    GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
   } else if (timHandle->Instance == TIM3) {
     __HAL_RCC_GPIOE_CLK_ENABLE();
     GPIO_InitStruct.Pin = GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5;

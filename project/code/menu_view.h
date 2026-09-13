@@ -99,4 +99,46 @@ void menu_view_user_imu_angle_9(const menu_imu_data_t *imu);
  */
 void menu_view_user_imu_angle_9_refresh(const menu_imu_data_t *imu);
 
+/**
+ * @brief 整页绘制蜂鸣器测试页。
+ * @param note 音名（如 "A4"）。
+ * @param frequency_hz 当前频率。
+ * @param playing true 表示正在鸣叫。
+ * @return 无。
+ */
+void menu_view_user_buzzer_13(const char *note, uint32_t frequency_hz,
+                              bool playing);
+
+/**
+ * @brief 只重绘蜂鸣器页的数值与状态。
+ * @param note 音名（如 "A4"）。
+ * @param frequency_hz 当前频率。
+ * @param playing true 表示正在鸣叫。
+ * @return 无。
+ */
+void menu_view_user_buzzer_13_refresh(const char *note, uint32_t frequency_hz,
+                                      bool playing);
+
+/**
+ * @brief 整页绘制旋律播放页。
+ * @param note 当前音名。
+ * @param index 当前音符序号（1 起）。
+ * @param total 音符总数。
+ * @param playing true 表示正在播放。
+ * @return 无。
+ */
+void menu_view_user_melody_14(const char *note, uint32_t index, uint32_t total,
+                              bool playing);
+
+/**
+ * @brief 只重绘旋律页的数值与状态。
+ * @param note 当前音名。
+ * @param index 当前音符序号（1 起）。
+ * @param total 音符总数。
+ * @param playing true 表示正在播放。
+ * @return 无。
+ */
+void menu_view_user_melody_14_refresh(const char *note, uint32_t index,
+                                      uint32_t total, bool playing);
+
 #endif

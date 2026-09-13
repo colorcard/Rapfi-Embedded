@@ -27,6 +27,18 @@ static lv_obj_t *s_timer_status;       /**< 状态胶囊背景。 */
 static lv_obj_t *s_timer_status_label; /**< 状态胶囊文字。 */
 static lv_obj_t *s_timer_bar;          /**< 秒进度条。 */
 
+/* 蜂鸣器页面专用控件。 */
+static lv_obj_t *s_buzzer_note;        /**< 音名文本。 */
+static lv_obj_t *s_buzzer_freq;        /**< 频率文本。 */
+static lv_obj_t *s_buzzer_state;       /**< 状态胶囊背景。 */
+static lv_obj_t *s_buzzer_state_label; /**< 状态胶囊文字。 */
+
+/* 旋律页面专用控件。 */
+static lv_obj_t *s_melody_note;        /**< 音名文本。 */
+static lv_obj_t *s_melody_progress;    /**< 进度文本。 */
+static lv_obj_t *s_melody_state;       /**< 状态胶囊背景。 */
+static lv_obj_t *s_melody_state_label; /**< 状态胶囊文字。 */
+
 /**
  * @brief 清空当前屏幕并重置数值标签缓存，作为新页面的画布。
  * @return 当前活动屏幕。
@@ -44,6 +56,14 @@ static lv_obj_t *view_reset(void)
   s_timer_status = NULL;
   s_timer_status_label = NULL;
   s_timer_bar = NULL;
+  s_buzzer_freq = NULL;
+  s_buzzer_state = NULL;
+  s_buzzer_state_label = NULL;
+  s_buzzer_note = NULL;
+  s_melody_note = NULL;
+  s_melody_progress = NULL;
+  s_melody_state = NULL;
+  s_melody_state_label = NULL;
   lv_obj_set_style_bg_color(screen, UI_COLOR_BG, LV_PART_MAIN);
   lv_obj_set_style_text_color(screen, UI_COLOR_TEXT, LV_PART_MAIN);
   return screen;
@@ -123,6 +143,7 @@ void menu_view_system_navigation_common(const menu_item_t *items,
 {
   lv_obj_t *screen;
   lv_obj_t *list;
+  lv_obj_t *selected_button = NULL;
   size_t i;
 
   if ((items == NULL) || (current_item == NULL)) {
@@ -140,7 +161,8 @@ void menu_view_system_navigation_common(const menu_item_t *items,
   lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(list, 2, LV_PART_MAIN);
   lv_obj_set_style_pad_row(list, 4, LV_PART_MAIN);
-  lv_obj_clear_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+  /* 允许滚动但隐藏滚动条；选中项会自动滚入可视区。 */
+  lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
   for (i = 0U; i < item_count; ++i) {
     lv_obj_t *button;
@@ -164,6 +186,14 @@ void menu_view_system_navigation_common(const menu_item_t *items,
                                 selected ? UI_COLOR_SEL_TXT : UI_COLOR_TEXT,
                                 LV_PART_MAIN);
     lv_obj_center(label);
+
+    if (selected) {
+      selected_button = button;
+    }
+  }
+
+  if (selected_button != NULL) {
+    lv_obj_scroll_to_view(selected_button, LV_ANIM_OFF);
   }
 }
 
@@ -331,4 +361,144 @@ void menu_view_user_imu_angle_9(const menu_imu_data_t *imu)
   s_value_label[3] = view_line(screen, NULL, 154);
   view_hint(screen, "BACK: return");
   menu_view_user_imu_angle_9_refresh(imu);
+}
+
+void menu_view_user_buzzer_13_refresh(const char *note, uint32_t frequency_hz,
+                                      bool playing)
+{
+  if (s_buzzer_note != NULL) {
+    lv_label_set_text(s_buzzer_note, (note != NULL) ? note : "--");
+  }
+  view_set_text(s_buzzer_freq, "%lu Hz", (unsigned long)frequency_hz);
+  if (s_buzzer_state != NULL) {
+    lv_obj_set_style_bg_color(s_buzzer_state,
+                              playing ? UI_COLOR_RUN : UI_COLOR_HOLD,
+                              LV_PART_MAIN);
+  }
+  if (s_buzzer_state_label != NULL) {
+    lv_label_set_text(s_buzzer_state_label, playing ? "ON" : "OFF");
+  }
+}
+
+void menu_view_user_buzzer_13(const char *note, uint32_t frequency_hz,
+                              bool playing)
+{
+  lv_obj_t *screen = view_reset();
+  lv_obj_t *card;
+  lv_obj_t *pill;
+  lv_obj_t *hint;
+
+  view_title(screen, "Buzzer");
+
+  /* 音名卡片。 */
+  card = lv_obj_create(screen);
+  lv_obj_set_size(card, 250, 68);
+  lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 28);
+  lv_obj_set_style_bg_color(card, UI_COLOR_ITEM, LV_PART_MAIN);
+  lv_obj_set_style_border_width(card, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(card, 12, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(card, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+  s_buzzer_note = lv_label_create(card);
+  lv_obj_set_style_text_font(s_buzzer_note, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_buzzer_note, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_center(s_buzzer_note);
+
+  /* 频率文本。 */
+  s_buzzer_freq = lv_label_create(screen);
+  lv_obj_set_style_text_color(s_buzzer_freq, UI_COLOR_HINT, LV_PART_MAIN);
+  lv_obj_align(s_buzzer_freq, LV_ALIGN_TOP_MID, 0, 102);
+
+  /* 状态胶囊：ON 绿色 / OFF 灰色。 */
+  pill = lv_obj_create(screen);
+  lv_obj_set_size(pill, 96, 30);
+  lv_obj_align(pill, LV_ALIGN_TOP_MID, 0, 130);
+  lv_obj_set_style_radius(pill, 15, LV_PART_MAIN);
+  lv_obj_set_style_border_width(pill, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(pill, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(pill, LV_OBJ_FLAG_SCROLLABLE);
+  s_buzzer_state = pill;
+
+  s_buzzer_state_label = lv_label_create(pill);
+  lv_obj_set_style_text_font(s_buzzer_state_label, &lv_font_montserrat_16,
+                             LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_buzzer_state_label, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_center(s_buzzer_state_label);
+
+  hint = lv_label_create(screen);
+  lv_label_set_text(hint, "OK on/off   UP/DOWN note");
+  lv_obj_set_style_text_color(hint, UI_COLOR_HINT, LV_PART_MAIN);
+  lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -4);
+
+  menu_view_user_buzzer_13_refresh(note, frequency_hz, playing);
+}
+
+void menu_view_user_melody_14_refresh(const char *note, uint32_t index,
+                                      uint32_t total, bool playing)
+{
+  if (s_melody_note != NULL) {
+    lv_label_set_text(s_melody_note, (note != NULL) ? note : "--");
+  }
+  view_set_text(s_melody_progress, "%lu / %lu", (unsigned long)index,
+                (unsigned long)total);
+  if (s_melody_state != NULL) {
+    lv_obj_set_style_bg_color(s_melody_state,
+                              playing ? UI_COLOR_RUN : UI_COLOR_HOLD,
+                              LV_PART_MAIN);
+  }
+  if (s_melody_state_label != NULL) {
+    lv_label_set_text(s_melody_state_label, playing ? "PLAY" : "STOP");
+  }
+}
+
+void menu_view_user_melody_14(const char *note, uint32_t index, uint32_t total,
+                              bool playing)
+{
+  lv_obj_t *screen = view_reset();
+  lv_obj_t *card;
+  lv_obj_t *pill;
+  lv_obj_t *hint;
+
+  view_title(screen, "Melody");
+
+  card = lv_obj_create(screen);
+  lv_obj_set_size(card, 250, 68);
+  lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 28);
+  lv_obj_set_style_bg_color(card, UI_COLOR_ITEM, LV_PART_MAIN);
+  lv_obj_set_style_border_width(card, 0, LV_PART_MAIN);
+  lv_obj_set_style_radius(card, 12, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(card, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+  s_melody_note = lv_label_create(card);
+  lv_obj_set_style_text_font(s_melody_note, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_melody_note, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_center(s_melody_note);
+
+  s_melody_progress = lv_label_create(screen);
+  lv_obj_set_style_text_color(s_melody_progress, UI_COLOR_HINT, LV_PART_MAIN);
+  lv_obj_align(s_melody_progress, LV_ALIGN_TOP_MID, 0, 102);
+
+  pill = lv_obj_create(screen);
+  lv_obj_set_size(pill, 96, 30);
+  lv_obj_align(pill, LV_ALIGN_TOP_MID, 0, 130);
+  lv_obj_set_style_radius(pill, 15, LV_PART_MAIN);
+  lv_obj_set_style_border_width(pill, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(pill, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(pill, LV_OBJ_FLAG_SCROLLABLE);
+  s_melody_state = pill;
+
+  s_melody_state_label = lv_label_create(pill);
+  lv_obj_set_style_text_font(s_melody_state_label, &lv_font_montserrat_16,
+                             LV_PART_MAIN);
+  lv_obj_set_style_text_color(s_melody_state_label, UI_COLOR_TEXT, LV_PART_MAIN);
+  lv_obj_center(s_melody_state_label);
+
+  hint = lv_label_create(screen);
+  lv_label_set_text(hint, "OK replay   BACK stop");
+  lv_obj_set_style_text_color(hint, UI_COLOR_HINT, LV_PART_MAIN);
+  lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -4);
+
+  menu_view_user_melody_14_refresh(note, index, total, playing);
 }

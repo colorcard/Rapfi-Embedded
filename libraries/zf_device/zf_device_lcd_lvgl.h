@@ -21,6 +21,12 @@ void lcd_lvgl_init(void);
  */
 void lcd_lvgl_handler(void);
 
+/**
+ * @brief 视频模式结束后强制 LVGL 重绘整屏。
+ * @return 无。
+ */
+void lcd_lvgl_resume(void);
+
 #ifdef __cplusplus
 }
 #endif
