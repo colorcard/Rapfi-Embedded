@@ -112,11 +112,12 @@ static uint16_t video_pixel(const uint8_t *p, uint8_t bpp)
 }
 
 /**
- * @brief 从整帧缓冲展开并写入一个 16 行条带到屏幕。
+ * @brief 从整帧缓冲展开一个 16 行条带到 s_dst（不发送）。
+ * @param frame 整帧缓冲。
  * @param out_row 目标起始行。
  * @return 无。
  */
-static void video_write_strip(const uint8_t *frame, uint16_t out_row)
+static void video_expand_strip(const uint8_t *frame, uint16_t out_row)
 {
   const video_fmt_t *fmt = &s_fmt[s_fmt_index];
   uint16_t oy;
@@ -134,25 +135,34 @@ static void video_write_strip(const uint8_t *frame, uint16_t out_row)
       s_dst[di + 1U] = (uint8_t)col;
     }
   }
+}
 
-  if (lcd_hw_start_area(0U, out_row, LCD_WIDTH, VIDEO_STRIP_ROWS) == 0) {
-    (void)spi_write_8bit_array(SPI_1, s_dst, (uint16_t)(VIDEO_STRIP_PX * 2U),
-                               1000U);
-    lcd_hw_end_area();
-  }
+/**
+ * @brief 发送 s_dst 中的当前条带（片选由调用者保持）。
+ * @return 无。
+ */
+static void video_tx_strip(void)
+{
+  (void)spi_write_8bit_array(SPI_1, s_dst, (uint16_t)(VIDEO_STRIP_PX * 2U),
+                             1000U);
   ++g_video_strip_cnt;
 }
 
 /**
- * @brief 整帧收齐后一次性把 15 个条带连续刷入屏幕（最小化撕裂）。
+ * @brief 整帧收齐后：只设一次全屏窗口，连续刷完 15 条（最小化撕裂与间隙）。
  */
 static void video_present_buffered(void)
 {
   uint16_t row;
 
-  for (row = 0U; row < LCD_HEIGHT; row = (uint16_t)(row + VIDEO_STRIP_ROWS)) {
-    video_write_strip(s_frame, row);
+  if (lcd_hw_start_area(0U, 0U, LCD_WIDTH, LCD_HEIGHT) != 0) {
+    return;
   }
+  for (row = 0U; row < LCD_HEIGHT; row = (uint16_t)(row + VIDEO_STRIP_ROWS)) {
+    video_expand_strip(s_frame, row);
+    video_tx_strip();
+  }
+  lcd_hw_end_area();
 }
 
 /**
@@ -178,11 +188,9 @@ static void video_present_progressive(void)
     }
   }
   if (lcd_hw_start_area(0U, s_frame_row, LCD_WIDTH, VIDEO_STRIP_ROWS) == 0) {
-    (void)spi_write_8bit_array(SPI_1, s_dst, (uint16_t)(VIDEO_STRIP_PX * 2U),
-                               1000U);
+    video_tx_strip();
     lcd_hw_end_area();
   }
-  ++g_video_strip_cnt;
 }
 
 uint32_t usb_cdc_read(uint8_t *data, uint32_t max_length)
