@@ -182,6 +182,9 @@ guard let devPath = path, port.open(devPath) else {
 }
 print("端口: \(devPath)")
 let stm = Stm32(port: port)
+/* 连接后排空启动信息(READY 等)，避免读帧错位 */
+_ = stm.readFrame(timeoutMs: 400)
+stm.rx.removeAll()
 
 // 对手
 let opponent: Mover
