@@ -5,6 +5,8 @@
 
 #include "stm32g4xx_hal.h"
 
+#include "rapfi_pattern_tables.h"
+
 /** @brief 每格最多所属的 5 连窗口数（4 方向 × 5 个偏移）。 */
 #define GWIN_PER_CELL   20
 /** @brief 5 连窗口总数上限（横 165 + 竖 165 + 斜 121×2）。 */
@@ -576,6 +578,118 @@ static int32_t eval_side(int side)
   return v;
 }
 
+/* --------------------- Rapfi 逐格棋型码（查表） --------------------- */
+
+/* Pattern 枚举（与 refer/rapfi 一致） */
+enum {
+  PAT_DEAD = 0, PAT_OL, PAT_B1, PAT_F1, PAT_B2, PAT_F2, PAT_F2A, PAT_F2B,
+  PAT_B3, PAT_B3S, PAT_F3, PAT_F3S, PAT_B4, PAT_B4S, PAT_F4, PAT_F5,
+  PATTERN_NB
+};
+
+/* Pattern4：4 方向组合威胁强度（freestyle，无禁手） */
+enum {
+  P4_NONE = 0, P4_FORBID, P4_L_FLEX2, P4_K_BLOCK3, P4_J_FLEX2_2X,
+  P4_I_BLOCK3_PLUS, P4_H_FLEX3, P4_G_FLEX3_PLUS, P4_F_FLEX3_2X,
+  P4_E_BLOCK4, P4_D_BLOCK4_PLUS, P4_C_BLOCK4_FLEX3, P4_B_FLEX4,
+  P4_A_FIVE, PATTERN4_NB
+};
+
+/* 4 方向组合 -> Pattern4（移植自 pattern.cpp getPattern4<false>） */
+static int pattern4_of(int p1, int p2, int p3, int p4)
+{
+  int n[PATTERN_NB] = {0};
+  n[p1]++;
+  n[p2]++;
+  n[p3]++;
+  n[p4]++;
+  n[PAT_B4] += n[PAT_B4S];
+  n[PAT_B3] += n[PAT_B3S];
+
+  if (n[PAT_F5] >= 1) return P4_A_FIVE;
+  if (n[PAT_B4] >= 2) return P4_B_FLEX4;
+  if (n[PAT_F4] >= 1) return P4_B_FLEX4;
+  if (n[PAT_B4] >= 1) {
+    if ((n[PAT_F3] >= 1) || (n[PAT_F3S] >= 1)) return P4_C_BLOCK4_FLEX3;
+    if (n[PAT_B3] >= 1) return P4_D_BLOCK4_PLUS;
+    if ((n[PAT_F2] + n[PAT_F2A] + n[PAT_F2B]) >= 1) return P4_D_BLOCK4_PLUS;
+    return P4_E_BLOCK4;
+  }
+  if ((n[PAT_F3] >= 1) || (n[PAT_F3S] >= 1)) {
+    if ((n[PAT_F3] + n[PAT_F3S]) >= 2) return P4_F_FLEX3_2X;
+    if (n[PAT_B3] >= 1) return P4_G_FLEX3_PLUS;
+    if ((n[PAT_F2] + n[PAT_F2A] + n[PAT_F2B]) >= 1) return P4_G_FLEX3_PLUS;
+    return P4_H_FLEX3;
+  }
+  if (n[PAT_B3] >= 1) {
+    if (n[PAT_B3] >= 2) return P4_I_BLOCK3_PLUS;
+    if ((n[PAT_F2] + n[PAT_F2A] + n[PAT_F2B]) >= 1) return P4_I_BLOCK3_PLUS;
+  }
+  if ((n[PAT_F2] + n[PAT_F2A] + n[PAT_F2B]) >= 2) return P4_J_FLEX2_2X;
+  if (n[PAT_B3] >= 1) return P4_K_BLOCK3;
+  if ((n[PAT_F2] + n[PAT_F2A] + n[PAT_F2B]) >= 1) return P4_L_FLEX2;
+  return P4_NONE;
+}
+
+/** @brief 某格沿 (dx,dy) 的密编码（中心视为空，4 格两翼）。 */
+__attribute__((always_inline)) static inline uint32_t cell_line_key(int x, int y,
+                                                                    int dx, int dy)
+{
+  uint32_t lo = 0;
+  uint32_t hi = 0;
+  int k;
+  for (k = 1; k <= 4; ++k) {
+    int nx = x - dx * k;
+    int ny = y - dy * k;
+    uint32_t c = 0U; /* wall */
+    if ((nx >= 0) && (nx < GOMOKU_N) && (ny >= 0) && (ny < GOMOKU_N)) {
+      uint8_t v = s_cell[ny * GOMOKU_N + nx];
+      c = (v == GOMOKU_EMPTY) ? 3U : ((v == GOMOKU_BLACK) ? 2U : ((v == GOMOKU_WHITE) ? 1U : 0U));
+    }
+    lo |= c << (2 * (4 - k));
+  }
+  for (k = 1; k <= 4; ++k) {
+    int nx = x + dx * k;
+    int ny = y + dy * k;
+    uint32_t c = 0U;
+    if ((nx >= 0) && (nx < GOMOKU_N) && (ny >= 0) && (ny < GOMOKU_N)) {
+      uint8_t v = s_cell[ny * GOMOKU_N + nx];
+      c = (v == GOMOKU_EMPTY) ? 3U : ((v == GOMOKU_BLACK) ? 2U : ((v == GOMOKU_WHITE) ? 1U : 0U));
+    }
+    hi |= c << (2 * (k - 1));
+  }
+  return (uint32_t)PAT2X_HALF_LO[lo] + (uint32_t)PAT2X_HALF_HI[hi];
+}
+
+/** @brief 某格 4 方向组合出的 Pattern4（对指定方）。 */
+static int cell_pattern4(int x, int y, int side)
+{
+  uint32_t k0 = cell_line_key(x, y, 1, 0);
+  uint32_t k1 = cell_line_key(x, y, 0, 1);
+  uint32_t k2 = cell_line_key(x, y, 1, 1);
+  uint32_t k3 = cell_line_key(x, y, 1, -1);
+  int p0 = (side == GOMOKU_BLACK) ? (PAT2X_TABLE[k0] & 0x0F) : (PAT2X_TABLE[k0] >> 4);
+  int p1 = (side == GOMOKU_BLACK) ? (PAT2X_TABLE[k1] & 0x0F) : (PAT2X_TABLE[k1] >> 4);
+  int p2 = (side == GOMOKU_BLACK) ? (PAT2X_TABLE[k2] & 0x0F) : (PAT2X_TABLE[k2] >> 4);
+  int p3 = (side == GOMOKU_BLACK) ? (PAT2X_TABLE[k3] & 0x0F) : (PAT2X_TABLE[k3] >> 4);
+  return pattern4_of(p0, p1, p2, p3);
+}
+
+/* Pattern4 -> 着法排序分（自己下这里的价值） */
+static const int32_t s_p4_score[PATTERN4_NB] = {
+  0, 0, 4, 8, 16, 24, 48, 96, 256, 512, 1024, 2048, 8192, 65536
+};
+
+/** @brief 逐格棋型排序分：进攻 + 防守。 */
+__attribute__((always_inline)) static inline int32_t pattern_move_score(int idx, int side)
+{
+  int x = idx % GOMOKU_N;
+  int y = idx / GOMOKU_N;
+  int32_t s4 = s_p4_score[cell_pattern4(x, y, side)];
+  int32_t o4 = s_p4_score[cell_pattern4(x, y, 3 - side)];
+  return s4 + o4;
+}
+
 /**
  * @brief 落点启发：一次遍历同时算出“进攻”和“防守”价值。
  * @param idx 候选点。
@@ -649,7 +763,7 @@ static void gen_candidates(int ply, int side)
     }
     move_heuristic(idx, side, &off, &def);
     s_cand[ply][n] = (uint16_t)idx;
-    s_cand_score[ply][n] = off * 2 + def;
+    s_cand_score[ply][n] = pattern_move_score(idx, side) * 64 + off * 2 + def;
     ++n;
   }
 
