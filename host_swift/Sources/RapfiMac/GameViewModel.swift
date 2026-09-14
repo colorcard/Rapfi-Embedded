@@ -1,3 +1,4 @@
+import RapfiKit
 import Foundation
 
 enum Side: Int {

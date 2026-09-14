@@ -2,20 +2,21 @@ import Foundation
 import Darwin
 
 /// 通过 POSIX termios 访问 /dev/cu.usbmodem* 的串口封装（原始字节流）。
-final class SerialPort {
+public final class SerialPort {
     private var fd: Int32 = -1
     private var running = false
     private var thread: Thread?
     private var buffer = Data()
     private let lock = NSLock()
 
-    /// 收到一批原始字节（在主线程回调）。
-    var onBytes: ((Data) -> Void)?
-
+    public init() {}
     deinit { close() }
 
+    /// 收到一批原始字节（在主线程回调，需主线程运行 RunLoop）。
+    public var onBytes: ((Data) -> Void)?
+
     /// 列出候选端口。
-    static func candidates() -> [String] {
+    public static func candidates() -> [String] {
         let fm = FileManager.default
         let names = (try? fm.contentsOfDirectory(atPath: "/dev")) ?? []
         return names
@@ -25,21 +26,19 @@ final class SerialPort {
     }
 
     /// 探测某端口是否是 Rapfi 引擎（发 PING，看是否回 READY 0x85）。
-    static func probe(_ path: String) -> Bool {
+    public static func probe(_ path: String) -> Bool {
         let p = SerialPort()
         guard p.open(path) else { return false }
         p.write(Data([0x07, 0x00, 0x00, 0x00]))
         let deadline = Date().addingTimeInterval(0.5)
-        var found = false
         while Date() < deadline {
-            let chunk = p.readBytes(timeoutMs: 60)
-            if chunk.contains(0x85) { found = true; break }
+            if p.readSync(timeoutMs: 60).contains(0x85) { p.close(); return true }
         }
         p.close()
-        return found
+        return false
     }
 
-    func open(_ path: String) -> Bool {
+    public func open(_ path: String) -> Bool {
         close()
         fd = Darwin.open(path, O_RDWR | O_NOCTTY | O_NONBLOCK)
         if fd < 0 { return false }
@@ -52,14 +51,14 @@ final class SerialPort {
         return true
     }
 
-    func close() {
+    public func close() {
         running = false
         if let t = thread { t.cancel(); thread = nil }
         if fd >= 0 { Darwin.close(fd); fd = -1 }
         lock.lock(); buffer.removeAll(); lock.unlock()
     }
 
-    func write(_ data: Data) {
+    public func write(_ data: Data) {
         guard fd >= 0 else { return }
         data.withUnsafeBytes { raw in
             if let base = raw.baseAddress {
@@ -68,19 +67,22 @@ final class SerialPort {
         }
     }
 
-    /// 同步读取一段（给探测用）。
-    private func readBytes(timeoutMs: Int) -> Data {
+    /// 同步读取一段（阻塞至多 timeoutMs，返回读到的字节，可能为空）。
+    public func readSync(timeoutMs: Int) -> Data {
+        guard fd >= 0 else { return Data() }
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
-        while Date() < deadline {
-            var b = [UInt8](repeating: 0, count: 64)
+        while true {
+            var b = [UInt8](repeating: 0, count: 256)
             let n = b.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
             if n > 0 { return Data(b[0..<n]) }
-            usleep(4000)
+            if n < 0 && errno != EAGAIN && errno != EWOULDBLOCK { return Data() }
+            if Date() >= deadline { return Data() }
+            usleep(1000)
         }
-        return Data()
     }
 
-    func startReading() {
+    /// 启动后台读线程（GUI 用）。
+    public func startReading() {
         running = true
         let t = Thread { [weak self] in self?.readLoop() }
         t.stackSize = 256 * 1024

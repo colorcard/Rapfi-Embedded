@@ -23,6 +23,8 @@
 #define SCORE_INF       (SCORE_WIN + 1000)
 /** @brief 视为“必杀分”的阈值。 */
 #define SCORE_MATE      (SCORE_WIN - MAX_PLY)
+/** @brief 静态评估上限：必须远小于胜负分，否则引擎会把好局面误判成必胜。 */
+#define SCORE_EVAL_MAX  6000
 
 /** @brief 置换表：2^13 项 × 8 字节 = 64KB。 */
 #define TT_BITS         13
@@ -34,7 +36,7 @@
 #define VCF_MAX_CAND    48
 
 /** @brief 窗口内本方子数对应的分值（下标 0..5）。 */
-static const int32_t s_win_score[6] = {0, 1, 8, 60, 500, SCORE_WIN};
+static const int32_t s_win_score[6] = {0, 1, 6, 30, 200, SCORE_WIN};
 
 /* ------------------------------ 棋盘状态 ------------------------------ */
 
@@ -44,8 +46,6 @@ static uint8_t s_hist_cell[GOMOKU_CELLS];
 static uint8_t s_hist_side[GOMOKU_CELLS];
 static int s_hist_n;
 static uint8_t s_winner;
-/** @brief 增量维护的窗口总分（按方，下标 1/2）。 */
-static int32_t s_score[3];
 /** @brief Zobrist 键与当前局面哈希。 */
 static uint32_t s_zob[2][GOMOKU_CELLS];
 static uint32_t s_hash;
@@ -58,6 +58,12 @@ static uint8_t s_cell_win[GOMOKU_CELLS][GWIN_PER_CELL];
 static uint8_t s_cell_win_n[GOMOKU_CELLS];
 /** @brief 每个 5 连窗口内各方子数（增量维护，下标 1/2）。 */
 static uint8_t s_win_cnt[3][GWIN_MAX];
+
+/** @brief 棋型评估用的“线”（行/列/两向斜线）。 */
+#define GLINE_MAX 96
+static uint8_t s_line_cells[GLINE_MAX][GOMOKU_N];
+static uint8_t s_line_len[GLINE_MAX];
+static int s_nline;
 
 /* ------------------------------ 置换表 ------------------------------ */
 
@@ -143,6 +149,42 @@ void gomoku_init(void)
     }
   }
   memset(s_tt, 0, sizeof(s_tt));
+
+  /* 生成行/列/斜线（长度 >= 5）。 */
+  {
+    int d;
+    static const int ddx[4] = {1, 0, 1, 1};
+    static const int ddy[4] = {0, 1, 1, -1};
+    s_nline = 0;
+    for (d = 0; d < 4; ++d) {
+      int sx;
+      int sy;
+      for (sy = 0; sy < GOMOKU_N; ++sy) {
+        for (sx = 0; sx < GOMOKU_N; ++sx) {
+          int k = 0;
+          int cx = sx;
+          int cy = sy;
+          /* 只从线的起点开始枚举：前一个格子必须在盘外或方向不同。 */
+          int px = sx - ddx[d];
+          int py = sy - ddy[d];
+          if ((px >= 0) && (px < GOMOKU_N) && (py >= 0) && (py < GOMOKU_N)) {
+            continue;
+          }
+          while ((cx >= 0) && (cx < GOMOKU_N) && (cy >= 0) &&
+                 (cy < GOMOKU_N) && (k < GOMOKU_N) && (s_nline < GLINE_MAX)) {
+            s_line_cells[s_nline][k] = (uint8_t)(cy * GOMOKU_N + cx);
+            ++k;
+            cx += ddx[d];
+            cy += ddy[d];
+          }
+          if ((k >= 5) && (s_nline < GLINE_MAX)) {
+            s_line_len[s_nline] = (uint8_t)k;
+            ++s_nline;
+          }
+        }
+      }
+    }
+  }
 }
 
 void gomoku_new(void)
@@ -151,37 +193,9 @@ void gomoku_new(void)
   memset(s_near, 0, sizeof(s_near));
   memset(s_win_cnt, 0, sizeof(s_win_cnt));
   memset(s_tt, 0, sizeof(s_tt));
-  s_score[0] = 0;
-  s_score[1] = 0;
-  s_score[2] = 0;
   s_hash = 0U;
   s_hist_n = 0;
   s_winner = GOMOKU_EMPTY;
-}
-
-/**
- * @brief 增量更新窗口总分：假设 idx 处落下/撤销一枚 side 子。
- * @param idx 格子索引（调用时该格应为空）。
- * @param side 落子方。
- * @param sign +1 落子，-1 撤销。
- * @return 无。
- */
-static void score_apply(int idx, int side, int sign)
-{
-  int opp = 3 - side;
-  uint8_t n = s_cell_win_n[idx];
-  uint8_t i;
-
-  for (i = 0U; i < n; ++i) {
-    int w = (int)s_cell_win[idx][i];
-    int mine = (int)s_win_cnt[side][w];
-    int theirs = (int)s_win_cnt[opp][w];
-    int32_t old_side = (theirs == 0) ? s_win_score[mine] : 0;
-    int32_t old_opp = (mine == 0) ? s_win_score[theirs] : 0;
-    int32_t new_side = (theirs == 0) ? s_win_score[mine + 1] : 0;
-    s_score[side] += (int32_t)sign * (new_side - old_side);
-    s_score[opp] += (int32_t)sign * (0 - old_opp);
-  }
 }
 
 /**
@@ -231,7 +245,6 @@ static void make_move(int idx, int side)
   uint8_t n = s_cell_win_n[idx];
   uint8_t i;
 
-  score_apply(idx, side, 1);
   s_cell[idx] = (uint8_t)side;
   for (i = 0U; i < n; ++i) {
     ++s_win_cnt[side][s_cell_win[idx][i]];
@@ -255,7 +268,6 @@ static void unmake_move(int idx, int side)
     --s_win_cnt[side][s_cell_win[idx][i]];
   }
   s_cell[idx] = GOMOKU_EMPTY;
-  score_apply(idx, side, -1);
   near_update(idx, -1);
   s_hash ^= s_zob[side - 1][idx];
 }
@@ -422,13 +434,79 @@ int gomoku_status(void)
 /* ------------------------------ 评估 ------------------------------ */
 
 /** @brief 整盘静态评估（增量维护）。 */
+/**
+ * @brief 单个连子段（长度 len，两端开闭）的棋型分值。
+ * @return 分值。
+ */
+static int32_t pattern_value(int len, int open_l, int open_r)
+{
+  if (len >= 5) {
+    return 100000;
+  }
+  if (len == 4) {
+    return (open_l && open_r) ? 8000 : ((open_l || open_r) ? 2000 : 0);
+  }
+  if (len == 3) {
+    return (open_l && open_r) ? 1000 : ((open_l || open_r) ? 150 : 0);
+  }
+  if (len == 2) {
+    return (open_l && open_r) ? 50 : ((open_l || open_r) ? 8 : 0);
+  }
+  if (len == 1) {
+    return (open_l && open_r) ? 2 : 0;
+  }
+  return 0;
+}
+
+/**
+ * @brief 按线扫描的棋型评估（含冲四/活三/活二）。
+ * @param side 评估方。
+ * @return 原始分值。
+ */
+static int32_t eval_patterns(int side)
+{
+  int32_t total = 0;
+  int l;
+
+  for (l = 0; l < s_nline; ++l) {
+    const uint8_t *cells = s_line_cells[l];
+    int len = (int)s_line_len[l];
+    int i = 0;
+    while (i < len) {
+      int j;
+      int run;
+      int open_l;
+      int open_r;
+      if (s_cell[cells[i]] != (uint8_t)side) {
+        ++i;
+        continue;
+      }
+      j = i;
+      while ((j < len) && (s_cell[cells[j]] == (uint8_t)side)) {
+        ++j;
+      }
+      run = j - i;
+      open_l = (i > 0) && (s_cell[cells[i - 1]] == GOMOKU_EMPTY);
+      open_r = (j < len) && (s_cell[cells[j]] == GOMOKU_EMPTY);
+      total += pattern_value(run, open_l, open_r);
+      i = j;
+    }
+  }
+  return total;
+}
+
+/**
+ * @brief 局面评估（当前方视角，已钳位）。
+ * @param side 当前方。
+ * @return 分值。
+ */
 static int32_t eval_side(int side)
 {
-  int32_t v = s_score[side];
-  if (v > SCORE_MATE) {
-    v = SCORE_MATE;
-  } else if (v < -SCORE_MATE) {
-    v = -SCORE_MATE;
+  int32_t v = eval_patterns(side) - eval_patterns(3 - side);
+  if (v > SCORE_EVAL_MAX) {
+    v = SCORE_EVAL_MAX;
+  } else if (v < -SCORE_EVAL_MAX) {
+    v = -SCORE_EVAL_MAX;
   }
   return v;
 }
@@ -476,6 +554,24 @@ static void gen_candidates(int ply, int side)
 {
   int n = 0;
   int idx;
+
+  /* 强制着法：自己有成五点 -> 只走成五；否则对手有成五点 -> 只挡。 */
+  {
+    int w5 = find_five_point(side);
+    if (w5 >= 0) {
+      s_cand[ply][0] = (uint16_t)w5;
+      s_cand_score[ply][0] = SCORE_WIN;
+      s_ncand[ply] = 1;
+      return;
+    }
+    w5 = find_five_point(3 - side);
+    if (w5 >= 0) {
+      s_cand[ply][0] = (uint16_t)w5;
+      s_cand_score[ply][0] = SCORE_WIN / 2;
+      s_ncand[ply] = 1;
+      return;
+    }
+  }
 
   for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
     int32_t off;
@@ -594,7 +690,7 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
   }
 
   if (depth <= 0) {
-    return (int)(eval_side(side) - eval_side(opp));
+    return (int)eval_side(side);
   }
 
   gen_candidates(ply, side);
