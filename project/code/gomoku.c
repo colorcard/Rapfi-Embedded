@@ -63,7 +63,13 @@ static uint8_t s_win_cnt[3][GWIN_MAX];
 #define GLINE_MAX 96
 static uint8_t s_line_cells[GLINE_MAX][GOMOKU_N];
 static uint8_t s_line_len[GLINE_MAX];
+static uint8_t s_line_dir[GLINE_MAX];
 static int s_nline;
+/** @brief 增量棋型分：每条线每方分值，以及双方总分。 */
+static int32_t s_line_pat[GLINE_MAX][3];
+static int32_t s_pat[3];
+/** @brief 每格在 4 个方向上所属的线（0xFF 表示不在任何 >=5 的线上）。 */
+static uint8_t s_cell_line[GOMOKU_CELLS][4];
 
 /* ------------------------------ 置换表 ------------------------------ */
 
@@ -88,6 +94,8 @@ static uint32_t s_nodes;
 static uint32_t s_deadline;
 static int s_time_limited;
 static int s_abort;
+
+static int32_t pattern_value(int len, int open_l, int open_r);
 
 /** @brief 简易 xorshift。 */
 static uint32_t xorshift(uint32_t *state)
@@ -179,9 +187,23 @@ void gomoku_init(void)
           }
           if ((k >= 5) && (s_nline < GLINE_MAX)) {
             s_line_len[s_nline] = (uint8_t)k;
+            s_line_dir[s_nline] = (uint8_t)d;
             ++s_nline;
           }
         }
+      }
+    }
+    /* 建立格 -> 线 索引，并清零增量棋型分。 */
+    memset(s_cell_line, 0xFF, sizeof(s_cell_line));
+    memset(s_line_pat, 0, sizeof(s_line_pat));
+    s_pat[0] = 0;
+    s_pat[1] = 0;
+    s_pat[2] = 0;
+    for (i = 0; i < s_nline; ++i) {
+      int dd = (int)s_line_dir[i];
+      int kk;
+      for (kk = 0; kk < (int)s_line_len[i]; ++kk) {
+        s_cell_line[s_line_cells[i][kk]][dd] = (uint8_t)i;
       }
     }
   }
@@ -193,6 +215,10 @@ void gomoku_new(void)
   memset(s_near, 0, sizeof(s_near));
   memset(s_win_cnt, 0, sizeof(s_win_cnt));
   memset(s_tt, 0, sizeof(s_tt));
+  memset(s_line_pat, 0, sizeof(s_line_pat));
+  s_pat[0] = 0;
+  s_pat[1] = 0;
+  s_pat[2] = 0;
   s_hash = 0U;
   s_hist_n = 0;
   s_winner = GOMOKU_EMPTY;
@@ -235,6 +261,61 @@ static void near_update(int idx, int delta)
 }
 
 /**
+ * @brief 重算某条线的双方棋型分并增量更新总分。
+ * @param line 线编号。
+ * @return 无。
+ */
+static void line_recompute(int line)
+{
+  const uint8_t *cells = s_line_cells[line];
+  int len = (int)s_line_len[line];
+  int32_t p1 = 0;
+  int32_t p2 = 0;
+  int i = 0;
+
+  while (i < len) {
+    uint8_t v = s_cell[cells[i]];
+    int j;
+    int run;
+    int open_l;
+    int open_r;
+    if (v == GOMOKU_EMPTY) {
+      ++i;
+      continue;
+    }
+    j = i;
+    while ((j < len) && (s_cell[cells[j]] == v)) {
+      ++j;
+    }
+    run = j - i;
+    open_l = (i > 0) && (s_cell[cells[i - 1]] == GOMOKU_EMPTY);
+    open_r = (j < len) && (s_cell[cells[j]] == GOMOKU_EMPTY);
+    if (v == GOMOKU_BLACK) {
+      p1 += pattern_value(run, open_l, open_r);
+    } else {
+      p2 += pattern_value(run, open_l, open_r);
+    }
+    i = j;
+  }
+  s_pat[1] += p1 - s_line_pat[line][1];
+  s_pat[2] += p2 - s_line_pat[line][2];
+  s_line_pat[line][1] = p1;
+  s_line_pat[line][2] = p2;
+}
+
+/** @brief 更新经过 idx 的四条线的棋型分。 */
+static void pat_update(int idx)
+{
+  int d;
+  for (d = 0; d < 4; ++d) {
+    uint8_t line = s_cell_line[idx][d];
+    if (line != 0xFFU) {
+      line_recompute((int)line);
+    }
+  }
+}
+
+/**
  * @brief 落子（内部）：更新增量分数、邻域计数、Zobrist 并写盘。
  * @param idx 格子索引（应为空）。
  * @param side 落子方。
@@ -251,6 +332,7 @@ static void make_move(int idx, int side)
   }
   near_update(idx, 1);
   s_hash ^= s_zob[side - 1][idx];
+  pat_update(idx);
 }
 
 /**
@@ -270,6 +352,7 @@ static void unmake_move(int idx, int side)
   s_cell[idx] = GOMOKU_EMPTY;
   near_update(idx, -1);
   s_hash ^= s_zob[side - 1][idx];
+  pat_update(idx);
 }
 
 int gomoku_side_at(int x, int y)
@@ -459,50 +542,13 @@ static int32_t pattern_value(int len, int open_l, int open_r)
 }
 
 /**
- * @brief 按线扫描的棋型评估（含冲四/活三/活二）。
- * @param side 评估方。
- * @return 原始分值。
- */
-static int32_t eval_patterns(int side)
-{
-  int32_t total = 0;
-  int l;
-
-  for (l = 0; l < s_nline; ++l) {
-    const uint8_t *cells = s_line_cells[l];
-    int len = (int)s_line_len[l];
-    int i = 0;
-    while (i < len) {
-      int j;
-      int run;
-      int open_l;
-      int open_r;
-      if (s_cell[cells[i]] != (uint8_t)side) {
-        ++i;
-        continue;
-      }
-      j = i;
-      while ((j < len) && (s_cell[cells[j]] == (uint8_t)side)) {
-        ++j;
-      }
-      run = j - i;
-      open_l = (i > 0) && (s_cell[cells[i - 1]] == GOMOKU_EMPTY);
-      open_r = (j < len) && (s_cell[cells[j]] == GOMOKU_EMPTY);
-      total += pattern_value(run, open_l, open_r);
-      i = j;
-    }
-  }
-  return total;
-}
-
-/**
  * @brief 局面评估（当前方视角，已钳位）。
  * @param side 当前方。
  * @return 分值。
  */
 static int32_t eval_side(int side)
 {
-  int32_t v = eval_patterns(side) - eval_patterns(3 - side);
+  int32_t v = s_pat[side] - s_pat[3 - side];
   if (v > SCORE_EVAL_MAX) {
     v = SCORE_EVAL_MAX;
   } else if (v < -SCORE_EVAL_MAX) {

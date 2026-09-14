@@ -62,7 +62,8 @@ struct StmMover: Mover {
 
     func move(_ board: Board, side: Int, stm: Stm32) -> (Int, Int)? {
         stm.send(0x03, UInt8(depth & 0xFF), UInt8(ms & 0xFF), UInt8((ms >> 8) & 0xFF))
-        guard let f = stm.readFrame(timeoutMs: ms + 5000), f[0] == 0x82 else { return nil }
+        let wait = (ms > 0 ? ms : 30000) + 5000
+        guard let f = stm.readFrame(timeoutMs: wait), f[0] == 0x82 else { return nil }
         if verbose {
             let sc = Int32(bitPattern: UInt32(f[4]) | (UInt32(f[5]) << 8)
                            | (UInt32(f[6]) << 16) | (UInt32(f[7]) << 24))
