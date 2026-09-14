@@ -230,6 +230,7 @@ final class GameViewModel: ObservableObject {
         pendingMove = nil
         sendFrame(Cmd.undo)
         if n == 2 { sendFrame(Cmd.undo) }
+        sendFrame(Cmd.status) /* 撤完两手后用完整状态回读 turn，避免中间态覆盖 */
         for _ in 0..<n { moves.removeLast() }
         rebuildLocal()
         status = .playing
@@ -333,8 +334,7 @@ final class GameViewModel: ObservableObject {
                 applyState(f[1], f[2])
                 if turn == engineSide { askEngine() }
             } else if pending == .undo {
-                pending = .none
-                applyState(f[1], f[2])
+                /* 悔棋的 OK 是“撤一手”的中间态；保留 pending，等随后的 STATUS。 */
             }
         case Rsp.err:
             pending = .none
@@ -355,6 +355,11 @@ final class GameViewModel: ObservableObject {
             applyState(f[16], f[17])
         case Rsp.status:
             applyState(f[1], f[2])
+            if pending == .undo {
+                pending = .none
+                pendingMove = nil
+                if status == .playing, turn == engineSide { askEngine() }
+            }
         case Rsp.turn:
             turn = (f[1] == 0) ? .black : .white
         default:
