@@ -37,7 +37,7 @@ enum { kEmpty = 0, kBlack = 1, kWhite = 2 };
 
 // 主题色
 static const Color kWood = Color::RGB(198, 150, 92);
-static const Color kStoneB = Color::RGB(120, 120, 130);
+static const Color kStoneB = Color::RGB(158, 158, 172);
 static const Color kStoneW = Color::RGB(245, 245, 250);
 static const Color kCursor = Color::RGB(46, 74, 122);
 static const Color kLast = Color::RGB(255, 196, 64);
@@ -186,6 +186,9 @@ struct Game {
   std::string info = "—";
   std::string status = "playing";
   std::string pending;  // "" / "PLAY" / "GO"
+  bool has_pending_move = false;
+  int pending_x = 0;
+  int pending_y = 0;
 
   int engine_side() const { return (human == kBlack) ? kWhite : kBlack; }
 
@@ -197,6 +200,7 @@ struct Game {
     info = "—";
     status = "playing";
     pending.clear();
+    has_pending_move = false;
     eng->send("NEW");
     if (turn == engine_side()) ask_engine();
   }
@@ -212,6 +216,9 @@ struct Game {
     if (x < 0 || x >= kN || y < 0 || y >= kN) return;
     if (board[y][x] != kEmpty) return;
     pending = "PLAY";
+    has_pending_move = true;
+    pending_x = x;
+    pending_y = y;
     eng->send("PLAY " + std::to_string(x) + " " + std::to_string(y));
   }
 
@@ -224,6 +231,7 @@ struct Game {
     has_last = false;
     status = "playing";
     turn = human;
+    has_pending_move = false;
   }
 
   void poll() {
@@ -235,6 +243,15 @@ struct Game {
     if (line == "OK") {
       if (pending == "PLAY") {
         pending.clear();
+        if (has_pending_move) {
+          if (board[pending_y][pending_x] == kEmpty) {
+            board[pending_y][pending_x] = human;
+            has_last = true;
+            last_x = pending_x;
+            last_y = pending_y;
+          }
+          has_pending_move = false;
+        }
         turn = (turn == kBlack) ? kWhite : kBlack;
         eng->send("STATUS");
       }
@@ -242,6 +259,7 @@ struct Game {
     }
     if (line == "ERR") {
       pending.clear();
+      has_pending_move = false;
       return;
     }
     if (line.rfind("MOVE ", 0) == 0) {
