@@ -70,16 +70,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${HAL_DIR}/stm32g4xx_hal_gpio.c
     ${HAL_DIR}/stm32g4xx_hal_pwr.c
     ${HAL_DIR}/stm32g4xx_hal_pwr_ex.c
-    ${HAL_DIR}/stm32g4xx_hal_rtc.c
-    ${HAL_DIR}/stm32g4xx_hal_rtc_ex.c
     ${HAL_DIR}/stm32g4xx_hal_rcc.c
     ${HAL_DIR}/stm32g4xx_hal_rcc_ex.c
-    ${HAL_DIR}/stm32g4xx_hal_adc.c
-    ${HAL_DIR}/stm32g4xx_hal_adc_ex.c
-    ${HAL_DIR}/stm32g4xx_ll_adc.c
-    ${HAL_DIR}/stm32g4xx_hal_fdcan.c
-    ${HAL_DIR}/stm32g4xx_hal_i2c.c
-    ${HAL_DIR}/stm32g4xx_hal_i2c_ex.c
     ${HAL_DIR}/stm32g4xx_hal_iwdg.c
     ${HAL_DIR}/stm32g4xx_hal_spi.c
     ${HAL_DIR}/stm32g4xx_hal_spi_ex.c
@@ -101,29 +93,16 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_interrupt.c
 
     # 芯片外设驱动层
-    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_adc.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_can.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_encoder.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_gpio.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_i2c.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_pit.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_pwm.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_rtc.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_spi.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_timer.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_uart.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_watchdog.c
 
     # 外接设备驱动层
-    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_buzzer.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_imu660ra.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_key.c
     ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_lcd_hw.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_led.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_nrf24l01.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_power.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_servo.c
-    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_w25q128.c
 
     # 框架入口
     ${CMAKE_SOURCE_DIR}/project/user/src/main.c

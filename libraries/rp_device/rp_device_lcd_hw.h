@@ -17,7 +17,6 @@ extern "C" {
 /**
  * @brief 初始化 ST7789 控制器并开启 LCD 背光
  * @return 0 初始化成功，-1 表示 SPI 通信失败
- * @note 此接口仅供 LCD 用户层调用，应用代码应包含 lcd_user.h
  */
 int lcd_hw_init(void);
 

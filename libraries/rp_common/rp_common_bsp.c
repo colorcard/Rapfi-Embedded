@@ -45,14 +45,8 @@ rp_status_t bsp_init(void)
   rp_status_t status = RP_OK;
 
   /* 板级设备：只初始化 rp_common_bsp_config.h 中打开的模块。 */
-#if (BSP_ENABLE_LED != 0U)
-  led_init();
-#endif
 #if (BSP_ENABLE_KEY != 0U)
   key_init();
-#endif
-#if (BSP_ENABLE_BUZZER != 0U)
-  buzzer_init();
 #endif
 
   /* 外设驱动：完成时钟、GPIO 复用与参数初始化。 */
@@ -65,42 +59,11 @@ rp_status_t bsp_init(void)
 #if (BSP_ENABLE_UART3 != 0U)
   status = bsp_collect(status, uart_init(UART_3, NULL));
 #endif
-#if (BSP_ENABLE_I2C2 != 0U)
-  status = bsp_collect(status, i2c_init(I2C_2, NULL));
-#endif
-#if (BSP_ENABLE_I2C4 != 0U)
-  status = bsp_collect(status, i2c_init(I2C_4, NULL));
-#endif
 #if (BSP_ENABLE_SPI1 != 0U)
   status = bsp_collect(status, spi_init(SPI_1, NULL));
 #endif
-#if (BSP_ENABLE_CAN2 != 0U)
-  status = bsp_collect(status, can_init(CAN_2, NULL));
-#endif
-#if (BSP_ENABLE_ADC4 != 0U)
-  status = bsp_collect(status, adc_init(NULL));
-#endif
-#if (BSP_ENABLE_ENCODER != 0U)
-  status = bsp_collect(status, encoder_init(ENCODER_1));
-  status = bsp_collect(status, encoder_init(ENCODER_2));
-#endif
-#if (BSP_ENABLE_NRF24L01 != 0U)
-  status = bsp_collect(status, nrf24l01_init());
-#endif
-#if (BSP_ENABLE_IMU660RA != 0U)
-  /* IMU 属可选外设：初始化失败不阻断整机，由菜单页面提示读取错误。 */
-  (void)imu660ra_init();
-#endif
-#if (BSP_ENABLE_SERVO != 0U)
-  status = bsp_collect(status, servo_init());
-#endif
 
-  /* 实时时钟：为计时器/日历提供基准。 */
-#if (BSP_ENABLE_RTC != 0U)
-  status = bsp_collect(status, rtc_init());
-#endif
-
-  /* 周期中断：按键扫描等周期任务。 */
+  /* 周期中断：周期任务。 */
 #if (BSP_ENABLE_PIT != 0U)
   status = bsp_collect(status, pit_init(PIT_DEFAULT_PERIOD_MS));
 #endif

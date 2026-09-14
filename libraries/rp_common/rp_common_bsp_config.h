@@ -4,80 +4,42 @@
 #include "stm32g4xx_hal.h"
 
 /**
- * @file bsp_config.h
- * @brief BSP 层集中默认参数。
+ * @file rp_common_bsp_config.h
+ * @brief BSP 层集中默认参数（Rapfi-Embedded：五子棋引擎）。
  *
- * 原理图无法确定的数值全部集中在本文件，并带有 TODO 标注。
+ * 原理图无法确定的数值集中在本文件，并带有 TODO 标注。
  * 应用层可在调用 BSP_xxx_Init() 时传入自定义配置覆盖这些默认值。
  */
 
-/* ------------------------------- LED ---------------------------------- */
-#define LED_ACTIVE_HIGH         1U /* TODO: 确认 LED 有效电平。 */
-
 /* ------------------------------- 按键 --------------------------------- */
-#define KEY_ACTIVE_LOW          1U /* TODO: 确认按下电平；当前沿用菜单逻辑（低有效）。 */
-
-/* ------------------------------ 蜂鸣器 -------------------------------- */
-#define BUZZER_ACTIVE_HIGH      1U /* TODO: 确认晶体管驱动极性。 */
+#define KEY_ACTIVE_LOW          1U /* TODO: 确认按下电平。 */
 
 /* ------------------------------- UART --------------------------------- */
-#define UART_DEFAULT_BAUDRATE    115200U /* TODO: 按应用确认波特率。 */
+#define UART_DEFAULT_BAUDRATE    115200U /* 调试串口波特率。 */
 #define UART_RX_BUFFER_SIZE      128U    /* 每路 UART 接收环形缓冲大小。 */
-#define UART_IRQ_PREEMPT_PRIORITY 1U     /* TODO: 按整机实时性统一规划。 */
-#define UART_IRQ_SUB_PRIORITY    0U      /* TODO: 按整机实时性统一规划。 */
-
-/* ------------------------------- I2C ---------------------------------- */
-#define I2C_DEFAULT_SPEED_HZ    400000U /* TODO: 按器件确认 100k/400k。 */
-#define I2C_RISE_TIME_NS        100U    /* TODO: 按上拉/总线电容确认。 */
-#define I2C_FALL_TIME_NS        10U     /* TODO: 按上拉/总线电容确认。 */
+#define UART_IRQ_PREEMPT_PRIORITY 1U
+#define UART_IRQ_SUB_PRIORITY    0U
 
 /* ------------------------------- SPI ---------------------------------- */
-#define SPI_DEFAULT_PRESCALER   SPI_BAUDRATEPRESCALER_2 /* /2 = 85MHz（PCLK2=170MHz），缩短刷屏时间以减轻撕裂。 */
-#define SPI_DEFAULT_CPOL        SPI_POLARITY_LOW        /* TODO: 按器件确认。 */
-#define SPI_DEFAULT_CPHA        SPI_PHASE_1EDGE         /* TODO: 按器件确认。 */
-
-/* ------------------------------- CAN ---------------------------------- */
-#define CAN_DEFAULT_BITRATE     500000U /* TODO: 按总线确认。 */
-#define CAN_DEFAULT_SAMPLE_PERMILLE 800U /* TODO: 按总线确认采样点。 */
-
-/* ------------------------------- ADC ---------------------------------- */
-#define ADC_DEFAULT_RESOLUTION  ADC_RESOLUTION_12B        /* TODO: 按应用确认。 */
-#define ADC_DEFAULT_SAMPLING    ADC_SAMPLETIME_47CYCLES_5 /* TODO: 按源阻抗确认。 */
-#define ADC_VREF_MV             2500U /* VREF+ 由内部 VREFBUF 提供，固定 2.5V。 */
-
-/* ---------------------------- 电源电压采样 ---------------------------- */
-#define POWER_VOLTAGE_SCALE_NUM 51U /* PB14/ADC4_IN4 经 OPA2188 5.1 倍缩放，TODO: 按实测校准。 */
-#define POWER_VOLTAGE_SCALE_DEN 10U
-
-/* ------------------------------- PWM ---------------------------------- */
-#define PWM_DEFAULT_FREQUENCY_HZ 1000U /* TODO: 按电机/舵机确认，舵机常用 50 Hz。 */
+#define SPI_DEFAULT_PRESCALER   SPI_BAUDRATEPRESCALER_2 /* /2 = 85MHz（PCLK2=170MHz）。 */
+#define SPI_DEFAULT_CPOL        SPI_POLARITY_LOW        /* ST7789 mode0。 */
+#define SPI_DEFAULT_CPHA        SPI_PHASE_1EDGE
 
 /* ------------------------------- PIT ---------------------------------- */
-#define PIT_DEFAULT_PERIOD_MS    10U /* 按键扫描周期，单位 ms。 */
-#define PIT_IRQ_PREEMPT_PRIORITY 0U  /* TODO: 按整机实时性统一规划。 */
-#define PIT_IRQ_SUB_PRIORITY     0U  /* TODO: 按整机实时性统一规划。 */
+#define PIT_DEFAULT_PERIOD_MS    10U /* 周期任务节拍，单位 ms。 */
+#define PIT_IRQ_PREEMPT_PRIORITY 0U
+#define PIT_IRQ_SUB_PRIORITY     0U
 
 /* ----------------------------- 看门狗 --------------------------------- */
 #define IWDG_DEFAULT_TIMEOUT_MS  1000U /* 独立看门狗默认超时，单位 ms。 */
 
 /* --------------------------- 模块使能开关 --------------------------- */
-#define BSP_ENABLE_LED      1U /* PA0 */
 #define BSP_ENABLE_KEY      1U /* PA4~PA7 */
-#define BSP_ENABLE_BUZZER   0U
-#define BSP_ENABLE_UART1    0U
+#define BSP_ENABLE_UART1    0U /* 调试串口由 debug_init() 自行初始化 */
 #define BSP_ENABLE_UART2    0U
 #define BSP_ENABLE_UART3    0U
-#define BSP_ENABLE_I2C2     1U /* IMU660RA 使用（PA8=SDA / PA9=SCL） */
-#define BSP_ENABLE_I2C4     0U
 #define BSP_ENABLE_SPI1     1U /* LCD 依赖 */
-#define BSP_ENABLE_CAN2     0U
-#define BSP_ENABLE_ADC4     1U
-#define BSP_ENABLE_RTC      1U /* 实时时钟，计时器菜单依赖 */
 #define BSP_ENABLE_PIT      1U
-#define BSP_ENABLE_ENCODER 0U /* TIM2/TIM3 正交编码器 */
-#define BSP_ENABLE_NRF24L01 0U /* PB1 CSN / PB2 CE / SPI1 */
-#define BSP_ENABLE_IMU660RA 1U /* I2C2，地址 0x69（SA0 上拉），需同时打开 BSP_ENABLE_I2C2 */
-#define BSP_ENABLE_SERVO 0U /* 启用会占用 LCD 的 PD12/PD13 */
 #if defined(DEBUG)
 #define BSP_ENABLE_IWDG     0U /* 调试时关闭，避免断点触发复位 */
 #else
