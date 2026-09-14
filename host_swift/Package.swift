@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "RapfiMac",
-            path: "Sources/RapfiMac"
+            path: "Sources/RapfiMac",
+            linkerSettings: [.linkedFramework("IOKit")]
         )
     ]
 )

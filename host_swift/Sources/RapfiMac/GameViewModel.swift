@@ -43,6 +43,8 @@ final class GameViewModel: ObservableObject {
     @Published var connected = false
     @Published var connecting = false
     @Published var portPath = ""
+    @Published var deviceName = ""
+    @Published var serial = ""
     @Published var errorText: String?
 
     var thinking: Bool { pending == .go }
@@ -51,6 +53,7 @@ final class GameViewModel: ObservableObject {
     private var pending: Pending = .none
     private var pendingMove: (Int, Int)?
     private var port: SerialPort?
+    private var monitor: Timer?
 
     // MARK: - 连接
 
@@ -58,6 +61,14 @@ final class GameViewModel: ObservableObject {
         guard !connected, !connecting else { return }
         connecting = true
         errorText = nil
+
+        // 优先按 USB VID:PID 精确识别。
+        if let dev = USBMatcher.find() {
+            attach(path: dev.path, product: dev.product, serial: dev.serial)
+            return
+        }
+
+        // 回退：逐个串口发 TURN 试探（非本机 USB 设备时）。
         let cands = SerialPort.candidates()
         DispatchQueue.global().async {
             var found: String?
@@ -71,13 +82,37 @@ final class GameViewModel: ObservableObject {
                 } else {
                     self.connecting = false
                     self.errorText = cands.isEmpty
-                        ? "未发现 USB 串口设备" : "未找到 STM32 引擎（检查是否已烧录/连接）"
+                        ? "未发现 USB 串口设备"
+                        : "未找到 STM32 引擎（VID 0x0483:0x5740）"
                 }
             }
         }
     }
 
-    func attach(path: String) {
+    /// 定时检查热插拔：设备出现自动连接，拔出自动断开。
+    func startMonitoring() {
+        guard monitor == nil else { return }
+        monitor = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.pollUSB() }
+        }
+    }
+
+    private func pollUSB() {
+        if connected {
+            if !FileManager.default.fileExists(atPath: portPath) {
+                port?.close()
+                port = nil
+                connected = false
+                deviceName = ""
+                serial = ""
+                errorText = "设备已断开"
+            }
+        } else if !connecting, USBMatcher.find() != nil {
+            autoConnect()
+        }
+    }
+
+    func attach(path: String, product: String = "", serial sn: String = "") {
         let p = SerialPort()
         guard p.open(path) else {
             connecting = false
@@ -86,6 +121,8 @@ final class GameViewModel: ObservableObject {
         }
         port = p
         portPath = path
+        deviceName = product
+        serial = sn
         p.onLine = { [weak self] line in
             Task { @MainActor in self?.handle(line) }
         }

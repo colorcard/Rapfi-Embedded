@@ -38,7 +38,10 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 920, minHeight: 720)
-        .task { game.autoConnect() }
+        .task {
+            game.autoConnect()
+            game.startMonitoring()
+        }
     }
 
     @ViewBuilder
@@ -100,6 +103,16 @@ struct ContentView: View {
 struct SidebarView: View {
     @ObservedObject var game: GameViewModel
 
+    private var subtitle: String {
+        if game.connected {
+            if !game.deviceName.isEmpty {
+                return "\(game.deviceName) · \(game.portPath)"
+            }
+            return game.portPath
+        }
+        return game.errorText ?? "通过 Type-C 连接 STM32"
+    }
+
     var body: some View {
         List {
             Section("连接") {
@@ -112,9 +125,7 @@ struct SidebarView: View {
                         Text(game.connected ? "已连接"
                              : (game.connecting ? "正在查找设备…" : "未连接"))
                             .font(.callout.weight(.medium))
-                        Text(game.connected ? game.portPath
-                             : (game.errorText ?? "通过 Type-C 连接 STM32"))
-                            .font(.caption)
+                        Text(subtitle).font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                     }
