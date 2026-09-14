@@ -62,7 +62,7 @@ EndBSPDependencies */
 /* 接收端点预装载长度：一次装载可连续接收多包，避免每 64 字节 NAK 一次，
    提升 USB FS 批量接收吞吐。应用缓冲需 >= 该值（见 usbd_cdc_if.c）。 */
 #ifndef CDC_DATA_FS_RX_ARM_SIZE
-#define CDC_DATA_FS_RX_ARM_SIZE 4096U
+#define CDC_DATA_FS_RX_ARM_SIZE CDC_DATA_FS_OUT_PACKET_SIZE
 #endif
 
 

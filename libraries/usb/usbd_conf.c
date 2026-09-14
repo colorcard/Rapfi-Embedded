@@ -110,15 +110,12 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev)
   pdev->pData = &hpcd_USB_FS;
   hpcd_USB_FS.pData = pdev;
 
-  /* PMA 缓冲分配（端点 0 双向，CDC 数据/命令）。
-     数据 OUT 端点用双缓冲：硬件在一块被 CPU 取走时接收另一块，
-     提高 USB FS 批量接收吞吐。 */
+  /* PMA 缓冲分配（端点 0 双向，CDC 数据/命令）。 */
   HAL_PCDEx_PMAConfig(pdev->pData, 0x00U, PCD_SNG_BUF, 0x18U);
   HAL_PCDEx_PMAConfig(pdev->pData, 0x80U, PCD_SNG_BUF, 0x58U);
   HAL_PCDEx_PMAConfig(pdev->pData, CDC_IN_EP, PCD_SNG_BUF, 0x98U);
-  HAL_PCDEx_PMAConfig(pdev->pData, CDC_OUT_EP, PCD_DBL_BUF,
-                      (uint32_t)0xD8U | ((uint32_t)0x118U << 16));
-  HAL_PCDEx_PMAConfig(pdev->pData, CDC_CMD_EP, PCD_SNG_BUF, 0x158U);
+  HAL_PCDEx_PMAConfig(pdev->pData, CDC_OUT_EP, PCD_SNG_BUF, 0xD8U);
+  HAL_PCDEx_PMAConfig(pdev->pData, CDC_CMD_EP, PCD_SNG_BUF, 0x118U);
   return USBD_OK;
 }
 

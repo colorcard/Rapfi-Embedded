@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 3.22)
 
 #
-# STM32G474VET6_LCD —— 逐飞风格开源库工程
+# Rapfi-Embedded —— STM32G474 五子棋引擎工程
 #
 # 目录结构：
 #   Drivers/            STM32 HAL / CMSIS（厂商底层）
 #   libraries/sdk/      system、HAL 配置、newlib 桩
 #   libraries/zf_common 公共层（时钟、延时、BSP 入口、中断）
 #   libraries/zf_driver 芯片外设驱动层
-#   libraries/zf_device 外接设备驱动层
+#   libraries/zf_device 外接设备驱动层（含 USB CDC 传输）
 #   project/user        框架入口（main / isr）
-#   project/code        用户业务代码
+#   project/code        用户业务代码（引擎/界面）
 #
 
 # Setup compiler settings
@@ -24,7 +24,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Set the project name
-set(CMAKE_PROJECT_NAME STM32G474VET6_LCD)
+set(CMAKE_PROJECT_NAME Rapfi_Embedded)
 
 # Enable compile command to ease indexing with e.g. clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -127,12 +127,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 # ---------------------------------------------------------------------------
-# 显示：仅 ST7789 硬件层
-#   本固件专注“Type-C USB 帧流 -> LCD”推屏，不编译 LVGL 与菜单。
+# 显示：ST7789 硬件层（棋盘用）
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# USB Device（Type-C 原生 USB CDC，串口帧流播放）
+# USB Device（Type-C 原生 USB CDC，引擎文本协议通道）
 # ---------------------------------------------------------------------------
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/third_party/STM32_USB_Device_Library/Core/Src/usbd_core.c
