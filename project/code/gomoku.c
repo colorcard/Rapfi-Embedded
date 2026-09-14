@@ -58,6 +58,8 @@ static uint8_t s_cell_win[GOMOKU_CELLS][GWIN_PER_CELL];
 static uint8_t s_cell_win_n[GOMOKU_CELLS];
 /** @brief 每个 5 连窗口内各方子数（增量维护，下标 1/2）。 */
 static uint8_t s_win_cnt[3][GWIN_MAX];
+/** @brief 每方“含 4 子”的窗口数（增量维护，>0 才可能有成五点）。 */
+static uint16_t s_four_win[3];
 
 /** @brief 棋型评估用的“线”（行/列/两向斜线）。 */
 #define GLINE_MAX 96
@@ -214,6 +216,9 @@ void gomoku_new(void)
   memset(s_cell, GOMOKU_EMPTY, sizeof(s_cell));
   memset(s_near, 0, sizeof(s_near));
   memset(s_win_cnt, 0, sizeof(s_win_cnt));
+  s_four_win[0] = 0;
+  s_four_win[1] = 0;
+  s_four_win[2] = 0;
   memset(s_tt, 0, sizeof(s_tt));
   memset(s_line_pat, 0, sizeof(s_line_pat));
   s_pat[0] = 0;
@@ -328,7 +333,14 @@ static void make_move(int idx, int side)
 
   s_cell[idx] = (uint8_t)side;
   for (i = 0U; i < n; ++i) {
-    ++s_win_cnt[side][s_cell_win[idx][i]];
+    uint8_t *pc = &s_win_cnt[side][s_cell_win[idx][i]];
+    if (*pc == 4U) {
+      --s_four_win[side];
+    }
+    ++(*pc);
+    if (*pc == 4U) {
+      ++s_four_win[side];
+    }
   }
   near_update(idx, 1);
   s_hash ^= s_zob[side - 1][idx];
@@ -347,7 +359,14 @@ static void unmake_move(int idx, int side)
   uint8_t i;
 
   for (i = 0U; i < n; ++i) {
-    --s_win_cnt[side][s_cell_win[idx][i]];
+    uint8_t *pc = &s_win_cnt[side][s_cell_win[idx][i]];
+    if (*pc == 4U) {
+      --s_four_win[side];
+    }
+    --(*pc);
+    if (*pc == 4U) {
+      ++s_four_win[side];
+    }
   }
   s_cell[idx] = GOMOKU_EMPTY;
   near_update(idx, -1);
@@ -521,7 +540,7 @@ int gomoku_status(void)
  * @brief 单个连子段（长度 len，两端开闭）的棋型分值。
  * @return 分值。
  */
-static int32_t pattern_value(int len, int open_l, int open_r)
+__attribute__((always_inline)) static inline int32_t pattern_value(int len, int open_l, int open_r)
 {
   if (len >= 5) {
     return 100000;
