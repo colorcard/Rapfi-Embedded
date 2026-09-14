@@ -17,11 +17,24 @@
 #define ROOT_CAND       16
 /** @brief 内部节点保留的候选数。 */
 #define NODE_CAND       12
-/** @brief 胜负分。 */
-#define SCORE_WIN       10000000
+/** @brief 胜负分（缩放到 int16，便于置换表存储）。 */
+#define SCORE_WIN       30000
+/** @brief 搜索无穷大。 */
+#define SCORE_INF       (SCORE_WIN + 1000)
+/** @brief 视为“必杀分”的阈值。 */
+#define SCORE_MATE      (SCORE_WIN - MAX_PLY)
+
+/** @brief 置换表：2^13 项 × 8 字节 = 64KB。 */
+#define TT_BITS         13
+#define TT_SIZE         (1U << TT_BITS)
+#define TT_MASK         (TT_SIZE - 1U)
+
+/** @brief VCF（连四威胁）搜索上限。 */
+#define VCF_MAX_PLY     12
+#define VCF_MAX_CAND    48
 
 /** @brief 窗口内本方子数对应的分值（下标 0..5）。 */
-static const int32_t s_win_score[6] = {0, 1, 12, 200, 4000, SCORE_WIN};
+static const int32_t s_win_score[6] = {0, 1, 8, 60, 500, SCORE_WIN};
 
 /* ------------------------------ 棋盘状态 ------------------------------ */
 
@@ -33,6 +46,9 @@ static int s_hist_n;
 static uint8_t s_winner;
 /** @brief 增量维护的窗口总分（按方，下标 1/2）。 */
 static int32_t s_score[3];
+/** @brief Zobrist 键与当前局面哈希。 */
+static uint32_t s_zob[2][GOMOKU_CELLS];
+static uint32_t s_hash;
 
 /* ------------------------------ 窗口索引 ------------------------------ */
 
@@ -40,6 +56,19 @@ static uint16_t s_win[GWIN_MAX][5];
 static uint16_t s_nwin;
 static uint8_t s_cell_win[GOMOKU_CELLS][GWIN_PER_CELL];
 static uint8_t s_cell_win_n[GOMOKU_CELLS];
+/** @brief 每个 5 连窗口内各方子数（增量维护，下标 1/2）。 */
+static uint8_t s_win_cnt[3][GWIN_MAX];
+
+/* ------------------------------ 置换表 ------------------------------ */
+
+typedef struct {
+  uint32_t key;
+  int16_t score;
+  uint8_t move; /* 最佳着法格号，255 表示无 */
+  uint8_t meta; /* depth<<2 | flag(0=exact,1=lower,2=upper) */
+} tt_entry_t;
+
+static tt_entry_t s_tt[TT_SIZE];
 
 /* ------------------------------ 搜索状态 ------------------------------ */
 
@@ -47,22 +76,34 @@ static uint16_t s_cand[MAX_PLY][MAX_CAND];
 static int32_t s_cand_score[MAX_PLY][MAX_CAND];
 static int s_ncand[MAX_PLY];
 static uint16_t s_killer[MAX_PLY][2];
+static uint16_t s_vcf_cand[VCF_MAX_PLY][VCF_MAX_CAND];
+static int s_vcf_n[VCF_MAX_PLY];
 static uint32_t s_nodes;
 static uint32_t s_deadline;
 static int s_time_limited;
 static int s_abort;
 
-/**
- * @brief 构建 5 连窗口索引（初始化时调用一次）。
- * @return 无。
- */
+/** @brief 简易 xorshift。 */
+static uint32_t xorshift(uint32_t *state)
+{
+  uint32_t x = *state;
+  x ^= x << 13;
+  x ^= x >> 17;
+  x ^= x << 5;
+  *state = x;
+  return x;
+}
+
 void gomoku_init(void)
 {
   static const int dx[4] = {1, 0, 1, 1};
   static const int dy[4] = {0, 1, 1, -1};
+  uint32_t seed = 0x9E3779B9U;
   int dir;
   int x;
   int y;
+  int s;
+  int i;
 
   s_nwin = 0U;
   memset(s_cell_win_n, 0, sizeof(s_cell_win_n));
@@ -95,15 +136,25 @@ void gomoku_init(void)
       }
     }
   }
+
+  for (s = 0; s < 2; ++s) {
+    for (i = 0; i < GOMOKU_CELLS; ++i) {
+      s_zob[s][i] = xorshift(&seed) | 1U;
+    }
+  }
+  memset(s_tt, 0, sizeof(s_tt));
 }
 
 void gomoku_new(void)
 {
   memset(s_cell, GOMOKU_EMPTY, sizeof(s_cell));
   memset(s_near, 0, sizeof(s_near));
+  memset(s_win_cnt, 0, sizeof(s_win_cnt));
+  memset(s_tt, 0, sizeof(s_tt));
   s_score[0] = 0;
   s_score[1] = 0;
   s_score[2] = 0;
+  s_hash = 0U;
   s_hist_n = 0;
   s_winner = GOMOKU_EMPTY;
 }
@@ -122,29 +173,14 @@ static void score_apply(int idx, int side, int sign)
   uint8_t i;
 
   for (i = 0U; i < n; ++i) {
-    const uint16_t *c = s_win[s_cell_win[idx][i]];
-    int mine = 0;
-    int theirs = 0;
-    int k;
-    for (k = 0; k < 5; ++k) {
-      uint8_t v;
-      if (c[k] == (uint16_t)idx) {
-        continue;
-      }
-      v = s_cell[c[k]];
-      if (v == (uint8_t)side) {
-        ++mine;
-      } else if (v == (uint8_t)opp) {
-        ++theirs;
-      }
-    }
-    {
-      int32_t old_side = (theirs == 0) ? s_win_score[mine] : 0;
-      int32_t old_opp = (mine == 0) ? s_win_score[theirs] : 0;
-      int32_t new_side = (theirs == 0) ? s_win_score[mine + 1] : 0;
-      s_score[side] += (int32_t)sign * (new_side - old_side);
-      s_score[opp] += (int32_t)sign * (0 - old_opp);
-    }
+    int w = (int)s_cell_win[idx][i];
+    int mine = (int)s_win_cnt[side][w];
+    int theirs = (int)s_win_cnt[opp][w];
+    int32_t old_side = (theirs == 0) ? s_win_score[mine] : 0;
+    int32_t old_opp = (mine == 0) ? s_win_score[theirs] : 0;
+    int32_t new_side = (theirs == 0) ? s_win_score[mine + 1] : 0;
+    s_score[side] += (int32_t)sign * (new_side - old_side);
+    s_score[opp] += (int32_t)sign * (0 - old_opp);
   }
 }
 
@@ -185,16 +221,23 @@ static void near_update(int idx, int delta)
 }
 
 /**
- * @brief 落子（内部）：更新增量分数与邻域计数并写盘。
+ * @brief 落子（内部）：更新增量分数、邻域计数、Zobrist 并写盘。
  * @param idx 格子索引（应为空）。
  * @param side 落子方。
  * @return 无。
  */
 static void make_move(int idx, int side)
 {
+  uint8_t n = s_cell_win_n[idx];
+  uint8_t i;
+
   score_apply(idx, side, 1);
   s_cell[idx] = (uint8_t)side;
+  for (i = 0U; i < n; ++i) {
+    ++s_win_cnt[side][s_cell_win[idx][i]];
+  }
   near_update(idx, 1);
+  s_hash ^= s_zob[side - 1][idx];
 }
 
 /**
@@ -205,9 +248,16 @@ static void make_move(int idx, int side)
  */
 static void unmake_move(int idx, int side)
 {
+  uint8_t n = s_cell_win_n[idx];
+  uint8_t i;
+
+  for (i = 0U; i < n; ++i) {
+    --s_win_cnt[side][s_cell_win[idx][i]];
+  }
   s_cell[idx] = GOMOKU_EMPTY;
   score_apply(idx, side, -1);
   near_update(idx, -1);
+  s_hash ^= s_zob[side - 1][idx];
 }
 
 int gomoku_side_at(int x, int y)
@@ -238,9 +288,7 @@ int gomoku_last_move(int *x, int *y)
 }
 
 /**
- * @brief 判断在 idx 落 side 后是否形成五连。
- * @param idx 格子索引。
- * @param side 落子方。
+ * @brief 判断在 idx 落 side 后是否形成五连（idx 视为已落）。
  * @return 1 成五，0 否。
  */
 static int makes_five(int idx, int side)
@@ -269,6 +317,53 @@ static int makes_five(int idx, int side)
     }
   }
   return 0;
+}
+
+/** @brief 若 side 在 idx 落子是否成五（idx 当前为空，不改动棋盘）。 */
+static int would_make_five(int idx, int side)
+{
+  int r;
+  s_cell[idx] = (uint8_t)side;
+  r = makes_five(idx, side);
+  s_cell[idx] = GOMOKU_EMPTY;
+  return r;
+}
+
+/**
+ * @brief 统计 side 的“成五点”数量（上限到 max）。
+ * @return 数量（>=max 时提前返回）。
+ */
+static int count_five_points(int side, int max)
+{
+  int idx;
+  int count = 0;
+
+  for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+    if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U)) {
+      continue;
+    }
+    if (would_make_five(idx, side) != 0) {
+      if (++count >= max) {
+        return count;
+      }
+    }
+  }
+  return count;
+}
+
+/** @brief 返回 side 第一个成五点，无则 -1。 */
+static int find_five_point(int side)
+{
+  int idx;
+  for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+    if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U)) {
+      continue;
+    }
+    if (would_make_five(idx, side) != 0) {
+      return idx;
+    }
+  }
+  return -1;
 }
 
 int gomoku_place(int x, int y, int side)
@@ -326,14 +421,16 @@ int gomoku_status(void)
 
 /* ------------------------------ 评估 ------------------------------ */
 
-/**
- * @brief 整盘窗口评估：统计所有不含对方子的 5 连窗口。
- * @param side 评估方。
- * @return 分值。
- */
+/** @brief 整盘静态评估（增量维护）。 */
 static int32_t eval_side(int side)
 {
-  return s_score[side];
+  int32_t v = s_score[side];
+  if (v > SCORE_MATE) {
+    v = SCORE_MATE;
+  } else if (v < -SCORE_MATE) {
+    v = -SCORE_MATE;
+  }
+  return v;
 }
 
 /**
@@ -353,22 +450,9 @@ static void move_heuristic(int idx, int side, int32_t *off, int32_t *def)
   uint8_t i;
 
   for (i = 0U; i < n; ++i) {
-    const uint16_t *c = s_win[s_cell_win[idx][i]];
-    int mine = 0;
-    int theirs = 0;
-    int k;
-    for (k = 0; k < 5; ++k) {
-      uint8_t v;
-      if (c[k] == (uint16_t)idx) {
-        continue;
-      }
-      v = s_cell[c[k]];
-      if (v == (uint8_t)side) {
-        ++mine;
-      } else if (v == (uint8_t)opp) {
-        ++theirs;
-      }
-    }
+    int w = (int)s_cell_win[idx][i];
+    int mine = (int)s_win_cnt[side][w];
+    int theirs = (int)s_win_cnt[opp][w];
     if (theirs == 0) {
       o += s_win_score[mine + 1];
     }
@@ -415,7 +499,6 @@ static void gen_candidates(int ply, int side)
     n = 1;
   }
 
-  /* 插入排序，降序 */
   {
     int i;
     for (i = 1; i < n; ++i) {
@@ -434,14 +517,69 @@ static void gen_candidates(int ply, int side)
   s_ncand[ply] = n;
 }
 
-/* ------------------------------ 搜索 ------------------------------ */
+/* ------------------------------ 置换表 ------------------------------ */
+
+static void tt_store(uint32_t key, int depth, int score, int flag, int move)
+{
+  tt_entry_t *e = &s_tt[key & TT_MASK];
+  if ((e->key == key) && ((int)(e->meta >> 2) > depth) && (e->move != 255U)) {
+    return; /* 已有更深结果 */
+  }
+  e->key = key;
+  e->score = (int16_t)score;
+  e->move = (uint8_t)((move < 0) ? 255 : move);
+  e->meta = (uint8_t)(((depth & 0x3F) << 2) | (flag & 3));
+}
+
+/** @brief 从置换表取移动与分数；返回是否命中。 */
+static int tt_probe(uint32_t key, int depth, int alpha, int beta, int ply,
+                    int *out_score, int *out_move)
+{
+  const tt_entry_t *e = &s_tt[key & TT_MASK];
+  int score;
+  int flag;
+
+  *out_move = -1;
+  if (e->key != key) {
+    return 0;
+  }
+  if (e->move != 255U) {
+    *out_move = (int)e->move;
+  }
+  if ((int)(e->meta >> 2) < depth) {
+    return 0;
+  }
+  flag = e->meta & 3;
+  score = e->score;
+  if (score >= SCORE_MATE) {
+    score -= ply;
+  } else if (score <= -SCORE_MATE) {
+    score += ply;
+  }
+  *out_score = score;
+  if (flag == 0) {
+    return 1;
+  }
+  if ((flag == 1) && (score >= beta)) {
+    return 1;
+  }
+  if ((flag == 2) && (score <= alpha)) {
+    return 1;
+  }
+  return 0;
+}
 
 static int negamax(int side, int depth, int alpha, int beta, int ply)
 {
   int opp = 3 - side;
   int limit;
   int i;
-  int best = -SCORE_WIN;
+  int best = -SCORE_INF;
+  int best_move = -1;
+  int tt_move = -1;
+  int tt_score = 0;
+  int alpha0 = alpha;
+  uint32_t key;
 
   ++s_nodes;
   if ((s_time_limited != 0) && ((s_nodes & 0x3FFU) == 0U) &&
@@ -449,6 +587,12 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
     s_abort = 1;
     return 0;
   }
+
+  key = s_hash;
+  if (tt_probe(key, depth, alpha, beta, ply, &tt_score, &tt_move) != 0) {
+    return tt_score;
+  }
+
   if (depth <= 0) {
     return (int)(eval_side(side) - eval_side(opp));
   }
@@ -456,6 +600,17 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
   gen_candidates(ply, side);
   if (s_ncand[ply] == 0) {
     return 0;
+  }
+  /* 命中置换表 -> 把该着法提到最前。 */
+  if (tt_move >= 0) {
+    for (i = 1; i < s_ncand[ply]; ++i) {
+      if (s_cand[ply][i] == (uint16_t)tt_move) {
+        uint16_t t = s_cand[ply][0];
+        s_cand[ply][0] = s_cand[ply][i];
+        s_cand[ply][i] = t;
+        break;
+      }
+    }
   }
   limit = s_ncand[ply];
   if (limit > NODE_CAND) {
@@ -465,13 +620,22 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
   for (i = 0; i < limit; ++i) {
     int idx = s_cand[ply][i];
     int score;
+    int full = (i == 0);
 
     make_move(idx, side);
     if (makes_five(idx, side) != 0) {
       unmake_move(idx, side);
       return SCORE_WIN - ply;
     }
-    score = -negamax(opp, depth - 1, -beta, -alpha, ply + 1);
+    if (full) {
+      score = -negamax(opp, depth - 1, -beta, -alpha, ply + 1);
+    } else {
+      /* PVS：先零窗试探，失败再全窗重搜。 */
+      score = -negamax(opp, depth - 1, -alpha - 1, -alpha, ply + 1);
+      if ((s_abort == 0) && (score > alpha) && (score < beta)) {
+        score = -negamax(opp, depth - 1, -beta, -alpha, ply + 1);
+      }
+    }
     unmake_move(idx, side);
 
     if (s_abort != 0) {
@@ -479,6 +643,7 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
     }
     if (score > best) {
       best = score;
+      best_move = idx;
     }
     if (score > alpha) {
       alpha = score;
@@ -491,31 +656,154 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
       break;
     }
   }
+
+  if (s_abort == 0) {
+    int flag = (best <= alpha0) ? 2 : ((best >= beta) ? 1 : 0);
+    int store = best;
+    if (store >= SCORE_MATE) {
+      store += ply;
+    } else if (store <= -SCORE_MATE) {
+      store -= ply;
+    }
+    tt_store(key, depth, store, flag, best_move);
+  }
   return best;
 }
 
+/* ------------------------------ VCF（连四威胁） ------------------------------ */
+
 /**
- * @brief 根节点搜索：返回最佳着法与评分。
- * @param side 待走方。
- * @param depth 深度。
- * @param best_idx 输出最佳格子索引。
- * @param out_score 输出评分。
- * @return 无。
+ * @brief VCF 候选：邻子空点，按启发式降序。
  */
-static void search_root(int side, int depth, int *best_idx, int *out_score)
+static void vcf_gen(int vd, int side)
+{
+  int n = 0;
+  int idx;
+
+  for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+    int32_t off;
+    int32_t def;
+    if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U)) {
+      continue;
+    }
+    if (n >= VCF_MAX_CAND) {
+      break;
+    }
+    move_heuristic(idx, side, &off, &def);
+    s_vcf_cand[vd][n] = (uint16_t)idx;
+    ++n;
+  }
+  s_vcf_n[vd] = n;
+}
+
+/**
+ * @brief 连续冲四搜索：side 走，是否能强制取胜。
+ * @param side 进攻方。
+ * @param depth 还能连续冲四的手数。
+ * @param first 顶层命中时输出第一步（可为 NULL）。
+ * @return 1 必胜，0 未找到。
+ */
+static int vcf(int side, int depth, int *first)
 {
   int opp = 3 - side;
-  int alpha = -SCORE_WIN;
-  int best = -SCORE_WIN;
+  int i;
+  int n;
+  int vd = depth;
+
+  if (depth <= 0) {
+    return 0;
+  }
+  if (vd >= VCF_MAX_PLY) {
+    vd = VCF_MAX_PLY - 1;
+  }
+
+  vcf_gen(vd, side);
+  n = s_vcf_n[vd];
+  for (i = 0; i < n; ++i) {
+    int m = s_vcf_cand[vd][i];
+    int w;
+    int b;
+
+    make_move(m, side);
+    if (makes_five(m, side) != 0) {
+      unmake_move(m, side);
+      if (first != NULL) {
+        *first = m;
+      }
+      return 1;
+    }
+    w = count_five_points(side, 2);
+    if (w == 0) {
+      unmake_move(m, side);
+      continue; /* 不是冲四 */
+    }
+    if (count_five_points(opp, 1) > 0) {
+      unmake_move(m, side);
+      continue; /* 对手能先成五 -> 失败 */
+    }
+    if (w >= 2) {
+      unmake_move(m, side);
+      if (first != NULL) {
+        *first = m;
+      }
+      return 1; /* 双四 */
+    }
+    b = find_five_point(side);
+    if (b < 0) {
+      unmake_move(m, side);
+      continue;
+    }
+    make_move(b, opp); /* 对手被迫挡 */
+    if (vcf(side, depth - 1, NULL) != 0) {
+      unmake_move(b, opp);
+      unmake_move(m, side);
+      if (first != NULL) {
+        *first = m;
+      }
+      return 1;
+    }
+    unmake_move(b, opp);
+    unmake_move(m, side);
+  }
+  return 0;
+}
+
+/* ------------------------------ 根搜索 ------------------------------ */
+
+/**
+ * @brief 根节点搜索：返回最佳着法与评分。
+ */
+static void search_root(int side, int depth, int alpha, int beta,
+                        int *best_idx, int *out_score)
+{
+  int opp = 3 - side;
+  int best = -SCORE_INF;
   int best_move = -1;
   int limit;
   int i;
+  uint32_t key = s_hash;
 
   s_abort = 0;
   gen_candidates(0, side);
   limit = s_ncand[0];
   if (limit > ROOT_CAND) {
     limit = ROOT_CAND;
+  }
+  /* 置换表着法优先。 */
+  {
+    int tt_move = -1;
+    int dummy = 0;
+    (void)tt_probe(key, 0, -SCORE_INF, SCORE_INF, 0, &dummy, &tt_move);
+    if (tt_move >= 0) {
+      for (i = 1; i < limit; ++i) {
+        if (s_cand[0][i] == (uint16_t)tt_move) {
+          uint16_t t = s_cand[0][0];
+          s_cand[0][0] = s_cand[0][i];
+          s_cand[0][i] = t;
+          break;
+        }
+      }
+    }
   }
 
   for (i = 0; i < limit; ++i) {
@@ -529,7 +817,7 @@ static void search_root(int side, int depth, int *best_idx, int *out_score)
       *out_score = SCORE_WIN - 1;
       return;
     }
-    score = -negamax(opp, depth - 1, -SCORE_WIN, -alpha, 1);
+    score = -negamax(opp, depth - 1, -beta, -alpha, 1);
     unmake_move(idx, side);
 
     if (s_abort != 0) {
@@ -560,6 +848,7 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
   int best_score = 0;
   uint32_t t0 = HAL_GetTick();
   int reached = 0;
+  int vcf_move = -1;
 
   if ((side != GOMOKU_BLACK) && (side != GOMOKU_WHITE)) {
     return -1;
@@ -570,6 +859,18 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
   if (max_depth > MAX_PLY) {
     max_depth = MAX_PLY;
   }
+  if (s_hist_n == 0) {
+    int c = (GOMOKU_N / 2) * GOMOKU_N + (GOMOKU_N / 2);
+    if (res != NULL) {
+      res->x = c % GOMOKU_N;
+      res->y = c / GOMOKU_N;
+      res->score = 0;
+      res->depth = 0;
+      res->nodes = 0;
+      res->time_ms = 0;
+    }
+    return 0;
+  }
 
   s_nodes = 0U;
   s_time_limited = (time_limit_ms > 0U) ? 1 : 0;
@@ -577,26 +878,78 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
   s_abort = 0;
   memset(s_killer, 0xFF, sizeof(s_killer));
 
+  /* 1) 能成五直接赢 */
+  {
+    int w = find_five_point(side);
+    if (w >= 0) {
+      best_idx = w;
+      best_score = SCORE_WIN - 1;
+      goto done;
+    }
+  }
+  /* 2) 对手成五点：先挡住（搜索也会找到，这里保证浅层不错） */
+  {
+    int w = find_five_point(3 - side);
+    if (w >= 0) {
+      best_idx = w;
+      best_score = 0;
+      goto done;
+    }
+  }
+  /* 3) VCF：连四必杀 */
+  if (vcf(side, VCF_MAX_PLY, &vcf_move) != 0 && vcf_move >= 0) {
+    best_idx = vcf_move;
+    best_score = SCORE_WIN - 2;
+    goto done;
+  }
+
   for (depth = 1; depth <= max_depth; ++depth) {
     int idx = -1;
     int score = 0;
-    search_root(side, depth, &idx, &score);
+    int alpha = -SCORE_INF;
+    int beta = SCORE_INF;
+
+    /* 迭代加深 + 轻度 aspiration。 */
+    if ((depth >= 4) && (reached >= 3)) {
+      alpha = best_score - 200;
+      beta = best_score + 200;
+    }
+    for (;;) {
+      search_root(side, depth, alpha, beta, &idx, &score);
+      if (s_abort != 0) {
+        break;
+      }
+      if (score <= alpha) {
+        alpha = -SCORE_INF;
+        beta = score + 1;
+        continue;
+      }
+      if (score >= beta) {
+        beta = SCORE_INF;
+        alpha = score - 1;
+        continue;
+      }
+      break;
+    }
     if (s_abort != 0) {
       break;
     }
     best_idx = idx;
     best_score = score;
     reached = depth;
-    if ((score >= SCORE_WIN - MAX_PLY) || (score <= -SCORE_WIN + MAX_PLY)) {
-      break; /* 已见必胜/必败 */
+    if ((score >= SCORE_MATE) || (score <= -SCORE_MATE)) {
+      break;
     }
     if (s_ncand[0] <= 1) {
       break;
     }
+    if ((s_time_limited != 0) && ((int32_t)(HAL_GetTick() - s_deadline) >= 0)) {
+      break;
+    }
   }
 
+done:
   if (best_idx < 0) {
-    /* 兜底：任意空点 */
     int i;
     for (i = 0; i < GOMOKU_CELLS; ++i) {
       if (s_cell[i] == GOMOKU_EMPTY) {
@@ -608,7 +961,6 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
   if (best_idx < 0) {
     return -1;
   }
-
   if (res != NULL) {
     res->x = best_idx % GOMOKU_N;
     res->y = best_idx / GOMOKU_N;
