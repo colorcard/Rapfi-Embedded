@@ -1149,23 +1149,6 @@ static int vcf(int side, int depth, int *first)
  */
 /* ------------------------------ VCT（连续威胁：四 + 活三） ------------------------------ */
 
-/** @brief 我方造四点数量（Pattern4 >= 冲四）。 */
-static int count_four_points(int side, int max)
-{
-  int idx;
-  int cnt = 0;
-
-  for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
-    if ((s_cell[idx] == GOMOKU_EMPTY) && (s_near[idx] != 0U) &&
-        ((int)s_pat4[idx][side] >= P4_E_BLOCK4)) {
-      if (++cnt >= max) {
-        return cnt;
-      }
-    }
-  }
-  return cnt;
-}
-
 /** @brief VCT 可打断检查（预算/时限/中断钩子）。 */
 static int vct_abort(void)
 {
@@ -1182,10 +1165,83 @@ static int vct_abort(void)
   return 0;
 }
 
+/** @brief 由 DEFENCE 表收集我方在 m 落子后各线上的防守点。 */
+static int vct_defences(int m, int side, int *out, int max)
+{
+  int x = m % GOMOKU_N;
+  int y = m / GOMOKU_N;
+  int att = (side == GOMOKU_BLACK) ? 0 : 1;
+  int n = 0;
+  int d;
+
+  for (d = 0; d < 4; ++d) {
+    int dx = s_dir_dx[d];
+    int dy = s_dir_dy[d];
+    uint32_t lo = 0;
+    uint32_t hi = 0;
+    uint8_t mask;
+    int k;
+    int i;
+
+    for (k = 1; k <= 4; ++k) {
+      int nx = x - dx * k;
+      int ny = y - dy * k;
+      uint32_t c = 0U;
+      if ((nx >= 0) && (nx < GOMOKU_N) && (ny >= 0) && (ny < GOMOKU_N)) {
+        {
+          uint8_t cv = s_cell[ny * GOMOKU_N + nx];
+          c = (cv == GOMOKU_EMPTY) ? 3U : ((cv == GOMOKU_BLACK) ? 2U
+                                                       : ((cv == GOMOKU_WHITE) ? 1U : 0U));
+        }
+      }
+      lo |= c << (2 * (4 - k));
+    }
+    for (k = 1; k <= 4; ++k) {
+      int nx = x + dx * k;
+      int ny = y + dy * k;
+      uint32_t c = 0U;
+      if ((nx >= 0) && (nx < GOMOKU_N) && (ny >= 0) && (ny < GOMOKU_N)) {
+        {
+          uint8_t cv = s_cell[ny * GOMOKU_N + nx];
+          c = (cv == GOMOKU_EMPTY) ? 3U : ((cv == GOMOKU_BLACK) ? 2U
+                                                       : ((cv == GOMOKU_WHITE) ? 1U : 0U));
+        }
+      }
+      hi |= c << (2 * (k - 1));
+    }
+    mask = DEFENCE_TABLE[(uint32_t)PAT2X_HALF_LO[lo] + (uint32_t)PAT2X_HALF_HI[hi]][att];
+    for (i = 0; i < 8; ++i) {
+      if ((mask & (uint8_t)(1U << i)) != 0U) {
+        int sgn = (i < 4) ? -1 : 1;
+        int dist = (i < 4) ? (4 - i) : (i - 3);
+        int nx = x + sgn * dx * dist;
+        int ny = y + sgn * dy * dist;
+        if ((nx >= 0) && (nx < GOMOKU_N) && (ny >= 0) && (ny < GOMOKU_N) &&
+            (s_cell[ny * GOMOKU_N + nx] == GOMOKU_EMPTY)) {
+          int j = ny * GOMOKU_N + nx;
+          int dup = 0;
+          int t;
+          for (t = 0; t < n; ++t) {
+            if (out[t] == j) {
+              dup = 1;
+              break;
+            }
+          }
+          if ((dup == 0) && (n < max)) {
+            out[n] = j;
+            ++n;
+          }
+        }
+      }
+    }
+  }
+  return n;
+}
+
 /**
  * @brief 连续威胁搜索(VCT)：只走能造四或活三的着法。
- *  - 我方造四 -> 对手被迫堵五点，继续
- *  - 我方活三 -> 对手须堵住我方每个造四点；全部堵死才算此路失败
+ *  - 我方造四 -> 对手被迫堵五点后继续
+ *  - 我方活三 -> 对手防守点查 DEFENCE 表，另加对手反杀点；全部堵死才算此路失败
  * @return 1 必胜，0 未找到。
  */
 static int vct(int side, int depth, int *first)
@@ -1217,7 +1273,6 @@ static int vct(int side, int depth, int *first)
       }
     }
   }
-  /* 插入排序：威胁强的优先 */
   for (i = 1; i < n; ++i) {
     int ci = cand[i];
     int pi = (int)s_pat4[ci][side];
@@ -1246,63 +1301,59 @@ static int vct(int side, int depth, int *first)
       if (count_five_points(opp, 1) == 0) {
         int b = find_five_point(side);
         if (b >= 0) {
-          make_move(b, opp); /* 对手被迫堵五点 */
-          /* 对手这一堵若给它自己造出五威胁，则我方必须回防 -> 此路失败 */
-          if (count_five_points(opp, 1) == 0) {
-            if (vct(side, depth - 1, NULL) != 0) {
-              unmake_move(b, opp);
-              unmake_move(c, side);
-              if (first != NULL) {
-                *first = c;
-              }
-              return 1;
+          make_move(b, opp);
+          if ((count_five_points(opp, 1) == 0) &&
+              (vct(side, depth - 1, NULL) != 0)) {
+            unmake_move(b, opp);
+            unmake_move(c, side);
+            if (first != NULL) {
+              *first = c;
             }
+            return 1;
           }
           unmake_move(b, opp);
         }
       }
     } else {
-      /* 活三：对手须堵住我方每个造四点；全部堵死才算失败 */
-      int dcount = count_four_points(side, 5);
-      int ocount = 0;
-      int allfail = 1;
+      int defs[24];
+      int ndef = vct_defences(c, side, defs, 24);
+      int allfail;
       int tried = 0;
+      int t;
 
-      /* 对手的“五威胁”防守点(反杀)也必须考虑 */
-      for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
-        if ((s_cell[idx] == GOMOKU_EMPTY) && (s_near[idx] != 0U) &&
-            ((int)s_pat4[idx][opp] >= P4_E_BLOCK4)) {
-          ++ocount;
+      /* 追加对手反杀点(能造四 -> 形成五威胁) */
+      for (idx = 0; (idx < GOMOKU_CELLS) && (ndef < 24); ++idx) {
+        int j;
+        int dup = 0;
+        if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U) ||
+            ((int)s_pat4[idx][opp] < P4_E_BLOCK4)) {
+          continue;
+        }
+        for (j = 0; j < ndef; ++j) {
+          if (defs[j] == idx) {
+            dup = 1;
+            break;
+          }
+        }
+        if (dup == 0) {
+          defs[ndef] = idx;
+          ++ndef;
         }
       }
-      if ((dcount == 0) || (dcount + ocount > 5)) {
-        allfail = 0;
-      } else {
-        for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
-          int is_def;
-          if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U)) {
-            continue;
-          }
-          is_def = ((int)s_pat4[idx][side] >= P4_E_BLOCK4) ||
-                   ((int)s_pat4[idx][opp] >= P4_E_BLOCK4);
-          if (is_def == 0) {
-            continue;
-          }
-          make_move(idx, opp);
-          if (count_five_points(opp, 1) > 0) {
-            unmake_move(idx, opp);
-            allfail = 0;
-            break;
-          }
-          if (vct(side, depth - 1, NULL) == 0) {
-            allfail = 0;
-          }
-          unmake_move(idx, opp);
-          ++tried;
-          if (allfail == 0) {
-            break;
-          }
+
+      allfail = (ndef > 0) ? 1 : 0;
+      if (count_five_points(opp, 1) > 0) {
+        allfail = 0; /* 对手能先成五 -> 必须回防 */
+      }
+      for (t = 0; (t < ndef) && (allfail != 0); ++t) {
+        make_move(defs[t], opp);
+        if (count_five_points(opp, 1) > 0) {
+          allfail = 0;
+        } else if (vct(side, depth - 1, NULL) == 0) {
+          allfail = 0;
         }
+        unmake_move(defs[t], opp);
+        ++tried;
       }
       if ((allfail != 0) && (tried > 0)) {
         unmake_move(c, side);
