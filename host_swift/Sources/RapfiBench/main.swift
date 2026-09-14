@@ -30,7 +30,16 @@ final class Stm32 {
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
         while Date() < deadline {
             if !rx.isEmpty {
-                if let n = RSP_LEN[rx[rx.startIndex]] {
+                if rx[rx.startIndex] == 0x86 {
+                    /* PV 帧：跳过（变长 2+n） */
+                    if rx.count >= 2 {
+                        let n = Int(rx[rx.index(rx.startIndex, offsetBy: 1)])
+                        if rx.count >= 2 + n {
+                            rx.removeFirst(2 + n)
+                            continue
+                        }
+                    }
+                } else if let n = RSP_LEN[rx[rx.startIndex]] {
                     if rx.count >= n {
                         let f = [UInt8](rx.prefix(n))
                         rx.removeFirst(n)
@@ -63,7 +72,13 @@ struct StmMover: Mover {
     func move(_ board: Board, side: Int, stm: Stm32) -> (Int, Int)? {
         stm.send(0x03, UInt8(depth & 0xFF), UInt8(ms & 0xFF), UInt8((ms >> 8) & 0xFF))
         let wait = (ms > 0 ? ms : 30000) + 5000
-        guard let f = stm.readFrame(timeoutMs: wait), f[0] == 0x82 else { return nil }
+        let deadline = Date().addingTimeInterval(Double(wait) / 1000.0)
+        var f: [UInt8]?
+        while Date() < deadline {
+            guard let g = stm.readFrame(timeoutMs: 300) else { continue }
+            if g[0] == 0x82 { f = g; break }   /* 等到 MOVE，忽略 OK/READY/PV */
+        }
+        guard let f = f else { return nil }
         if verbose {
             let sc = Int32(bitPattern: UInt32(f[4]) | (UInt32(f[5]) << 8)
                            | (UInt32(f[6]) << 16) | (UInt32(f[7]) << 24))
@@ -81,8 +96,13 @@ struct RefMover: Mover {
     func move(_ board: Board, side: Int, stm: Stm32) -> (Int, Int)? {
         guard let mv = engine.bestMove(board, side: side) else { return nil }
         stm.send(0x02, UInt8(mv.0), UInt8(mv.1))
-        guard let f = stm.readFrame(timeoutMs: 3000), f[0] == 0x80 else { return nil }
-        return mv
+        let deadline = Date().addingTimeInterval(3.0)
+        while Date() < deadline {
+            guard let g = stm.readFrame(timeoutMs: 300) else { continue }
+            if g[0] == 0x80 { return mv }      /* 等到 OK */
+            if g[0] == 0x81 { return nil }
+        }
+        return nil
     }
 }
 
@@ -98,10 +118,13 @@ func playGame(stm: Stm32, black: Mover, white: Mover) -> Int {
     for _ in 0..<Board.cells {
         let mover = side == 1 ? black : white
         let t0 = Date()
-        guard let mv = mover.move(board, side: side, stm: stm) else { return 0 }
+        guard let mv = mover.move(board, side: side, stm: stm) else {
+            if verbose { print("   >> \(side == 1 ? "黑" : "白")(\(mover.label)) 无响应/错误") }
+            return 0
+        }
         let dt = Date().timeIntervalSince(t0)
         guard board.inBounds(mv.0, mv.1), board[mv.0, mv.1] == 0 else {
-            if verbose { print("  非法着法 \(side): \(mv)") }
+            if verbose { print("   >> 非法着法 \(side): \(mv)") }
             return 0
         }
         if verbose {

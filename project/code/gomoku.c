@@ -18,9 +18,9 @@
 /** @brief 候选点数量上限。 */
 #define MAX_CAND        128
 /** @brief 根节点保留的候选数。 */
-#define ROOT_CAND       16
+#define ROOT_CAND       12
 /** @brief 内部节点保留的候选数。 */
-#define NODE_CAND       12
+#define NODE_CAND       8
 /** @brief 胜负分（缩放到 int16，便于置换表存储）。 */
 #define SCORE_WIN       30000
 /** @brief 搜索无穷大。 */
@@ -57,6 +57,10 @@ static uint32_t s_hash;
 /* SWAR 位棋盘：每方 4 个视图（行/列/↘/↙），每条线一个 lane（bit=x）。
    连五判定用 m&(m>>1)&(m>>2)&(m>>3)&(m>>4)，寄存器内并行。 */
 CCMRAM static uint32_t s_bb[2][4][29];
+/** @brief 中心权重表（越靠中心越高），用于开局引导。 */
+static int16_t s_ctr_tab[GOMOKU_CELLS];
+/** @brief 每方中心权重和（增量维护）。 */
+static int32_t s_ctr[3];
 
 /* ------------------------------ 窗口索引 ------------------------------ */
 
@@ -105,6 +109,9 @@ static uint32_t s_deadline;
 static int s_time_limited;
 static int s_abort;
 static gomoku_stop_fn s_stop_hook;
+/** @brief VCF 节点预算，避免不限时时指数爆炸。 */
+static uint32_t s_vcf_nodes;
+#define VCF_NODE_LIMIT 400000U
 /* 三角 PV 表（每层的最佳线路），以及根 PV 供协议回传 */
 static uint8_t s_pv[MAX_PLY][MAX_PLY];
 static uint8_t s_pv_len[MAX_PLY];
@@ -177,6 +184,14 @@ void gomoku_init(void)
   }
   memset(s_tt, 0, sizeof(s_tt));
 
+  for (i = 0; i < GOMOKU_CELLS; ++i) {
+    int ct_x = i % GOMOKU_N;
+    int ct_y = i / GOMOKU_N;
+    int dist = ((ct_x > 7) ? (ct_x - 7) : (7 - ct_x)) +
+               ((ct_y > 7) ? (ct_y - 7) : (7 - ct_y));
+    s_ctr_tab[i] = (int16_t)((7 - dist) * 4);
+  }
+
   /* 启用 DWT 周期计数器（搜索时限用）。 */
   CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
   DWT->CYCCNT = 0U;
@@ -244,6 +259,9 @@ void gomoku_new(void)
   s_four_win[2] = 0;
   memset(s_tt, 0, sizeof(s_tt));
   memset(s_line_pat, 0, sizeof(s_line_pat));
+  s_ctr[0] = 0;
+  s_ctr[1] = 0;
+  s_ctr[2] = 0;
   s_pat[0] = 0;
   s_pat[1] = 0;
   s_pat[2] = 0;
@@ -490,6 +508,7 @@ static void make_move(int idx, int side)
     }
   }
   near_update(idx, 1);
+  s_ctr[side] += s_ctr_tab[idx];
   s_hash ^= s_zob[side - 1][idx];
   pat_update(idx);
   cellpat_update(idx);
@@ -519,6 +538,7 @@ static void unmake_move(int idx, int side)
   s_cell[idx] = GOMOKU_EMPTY;
   bb_clear(idx, side);
   near_update(idx, -1);
+  s_ctr[side] -= s_ctr_tab[idx];
   s_hash ^= s_zob[side - 1][idx];
   pat_update(idx);
   cellpat_update(idx);
@@ -732,7 +752,7 @@ __attribute__((always_inline)) static inline int32_t pattern_value(int len, int 
  */
 static int32_t eval_side(int side)
 {
-  int32_t v = s_pat[side] - s_pat[3 - side];
+  int32_t v = (s_pat[side] - s_pat[3 - side]) + (s_ctr[side] - s_ctr[3 - side]);
   if (v > SCORE_EVAL_MAX) {
     v = SCORE_EVAL_MAX;
   } else if (v < -SCORE_EVAL_MAX) {
@@ -1045,7 +1065,10 @@ static void vcf_gen(int vd, int side)
  */
 static int vcf(int side, int depth, int *first)
 {
-  /* 时限/中断检查：VCF 可能很深，必须可被打断。 */
+  /* 节点上限 + 时限/中断检查：VCF 可能很深/爆炸，必须可被截断。 */
+  if (++s_vcf_nodes > VCF_NODE_LIMIT) {
+    return 0;
+  }
   if ((s_stop_hook != NULL) && (s_stop_hook() != 0)) {
     return 0;
   }
@@ -1253,11 +1276,25 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
       goto done;
     }
   }
-  /* 3) VCF：连四必杀 */
-  if (vcf(side, VCF_MAX_PLY, &vcf_move) != 0 && vcf_move >= 0) {
-    best_idx = vcf_move;
-    best_score = SCORE_WIN - 2;
-    goto done;
+  /* 3) VCF：连四必杀。给 VCF 单独的小预算(时限的 1/4，上限 500ms)，
+     否则它可能吃掉整个时限，导致主搜索只到很浅的深度。 */
+  {
+    uint32_t full_deadline = s_deadline;
+    s_vcf_nodes = 0U;
+    if (time_limit_ms > 0U) {
+      uint32_t budget = (uint32_t)(((uint64_t)time_limit_ms * 170000ULL) / 4ULL);
+      if (budget > 85000000U) { /* 500ms */
+        budget = 85000000U;
+      }
+      s_deadline = DWT->CYCCNT + budget;
+    }
+    if (vcf(side, VCF_MAX_PLY, &vcf_move) != 0 && vcf_move >= 0) {
+      s_deadline = full_deadline;
+      best_idx = vcf_move;
+      best_score = SCORE_WIN - 2;
+      goto done;
+    }
+    s_deadline = full_deadline;
   }
 
   for (depth = 1; depth <= max_depth; ++depth) {
@@ -1271,22 +1308,29 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
       alpha = best_score - 200;
       beta = best_score + 200;
     }
-    for (;;) {
-      search_root(side, depth, alpha, beta, &idx, &score);
-      if (s_abort != 0) {
+    {
+      int retries = 0;
+      for (;;) {
+        search_root(side, depth, alpha, beta, &idx, &score);
+        if (s_abort != 0) {
+          break;
+        }
+        if ((score <= alpha) || (score >= beta)) {
+          /* 失败后重搜；最多 2 次，之后退化为全窗口，保证一定终止。 */
+          if (++retries >= 3) {
+            alpha = -SCORE_INF;
+            beta = SCORE_INF;
+          } else if (score <= alpha) {
+            alpha = -SCORE_INF;
+            beta = score + 1;
+          } else {
+            beta = SCORE_INF;
+            alpha = score - 1;
+          }
+          continue;
+        }
         break;
       }
-      if (score <= alpha) {
-        alpha = -SCORE_INF;
-        beta = score + 1;
-        continue;
-      }
-      if (score >= beta) {
-        beta = SCORE_INF;
-        alpha = score - 1;
-        continue;
-      }
-      break;
     }
     if (s_abort != 0) {
       break;
