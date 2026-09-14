@@ -39,6 +39,10 @@ enable_language(C ASM)
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
 
+# 引擎是计算热点，单独用 -O2（其余仍按构建类型）。
+set_source_files_properties(${CMAKE_SOURCE_DIR}/project/code/gomoku.c
+    PROPERTIES COMPILE_OPTIONS "-O2")
+
 # ---------------------------------------------------------------------------
 # 厂商 HAL / CMSIS 源码
 # ---------------------------------------------------------------------------
@@ -124,6 +128,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # 框架入口
     ${CMAKE_SOURCE_DIR}/project/user/src/main.c
     ${CMAKE_SOURCE_DIR}/project/user/src/isr.c
+
+    # 应用与引擎
+    ${CMAKE_SOURCE_DIR}/project/code/rapfi_app.c
+    ${CMAKE_SOURCE_DIR}/project/code/gomoku.c
 )
 
 # ---------------------------------------------------------------------------
