@@ -242,6 +242,31 @@ def run_cli(game):
     print("status:", game.status)
 
 
+def _load_font(size, bold=False):
+    """优先加载 macOS 自带中文字体，避免中文显示为方块/空白。"""
+    import os
+
+    import pygame
+
+    cands = [
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/Library/Fonts/Arial Unicode.ttf",
+    ]
+    for path in cands:
+        if os.path.exists(path):
+            try:
+                f = pygame.font.Font(path, size)
+                if bold:
+                    f.set_bold(True)
+                return f
+            except Exception:
+                pass
+    return pygame.font.SysFont("arialunicode,menlo", size, bold=bold)
+
+
 def run_gui(game):
     import pygame
 
@@ -251,8 +276,9 @@ def run_gui(game):
     pygame.init()
     screen = pygame.display.set_mode((size, size + bar))
     pygame.display.set_caption("Rapfi-Embedded Gomoku")
-    font = pygame.font.SysFont("Menlo", 16)
-    font_big = pygame.font.SysFont("Menlo", 20, bold=True)
+    font = _load_font(16)
+    font_mid = _load_font(22, bold=True)
+    font_big = _load_font(40, bold=True)
     clock = pygame.time.Clock()
 
     def to_px(x, y):
@@ -310,18 +336,27 @@ def run_gui(game):
         base = size
         if game.status == "playing":
             who = "你" if game.turn == game.human else "引擎"
-            head = f"轮到 {who}" 
+            head = f"轮到 {who}"
             if game.pending == "GO":
-                head += "  (思考中...)"
+                head += "（思考中…）"
         elif game.status == "draw":
             head = "平局"
         else:
             head = "你赢了！" if game.status == "human" else "引擎获胜"
-        screen.blit(font_big.render(head, True, (30, 30, 30)), (16, base + 8))
-        screen.blit(font.render(game.info, True, (60, 60, 60)), (16, base + 36))
+        screen.blit(font_mid.render(head, True, (30, 30, 30)), (16, base + 8))
+        screen.blit(font.render(game.info, True, (60, 60, 60)), (16, base + 38))
         screen.blit(font.render(
             f"深度 {game.depth}   N 新局  F 换先  U 悔棋  +/- 深度  Q 退出",
-            True, (90, 70, 40)), (16, base + 62))
+            True, (90, 70, 40)), (16, base + 64))
+
+        # 终局横幅（醒目提示胜负）
+        if game.status != "playing":
+            banner = pygame.Surface((size, 96), pygame.SRCALPHA)
+            banner.fill((0, 0, 0, 175))
+            txt = font_big.render(head, True, (255, 220, 80))
+            banner.blit(txt, (size // 2 - txt.get_width() // 2,
+                              48 - txt.get_height() // 2))
+            screen.blit(banner, (0, size // 2 - 48))
 
         pygame.display.flip()
         clock.tick(60)
