@@ -18,9 +18,9 @@
 /** @brief 候选点数量上限。 */
 #define MAX_CAND        128
 /** @brief 根节点保留的候选数。 */
-#define ROOT_CAND       12
+#define ROOT_CAND       16
 /** @brief 内部节点保留的候选数。 */
-#define NODE_CAND       8
+#define NODE_CAND       16
 /** @brief 胜负分（缩放到 int16，便于置换表存储）。 */
 #define SCORE_WIN       30000
 /** @brief 搜索无穷大。 */
@@ -902,11 +902,10 @@ static int tt_probe(uint32_t key, int depth, int alpha, int beta, int ply,
   }
   flag = e->meta & 3;
   score = e->score;
-  if (score >= SCORE_MATE) {
-    score -= ply;
-  } else if (score <= -SCORE_MATE) {
-    score += ply;
+  if ((score >= SCORE_MATE) || (score <= -SCORE_MATE)) {
+    return 0; /* 不信任 TT 中的胜负分 */
   }
+  (void)ply;
   *out_score = score;
   if (flag == 0) {
     return 1;
@@ -1248,13 +1247,16 @@ static int vct(int side, int depth, int *first)
         int b = find_five_point(side);
         if (b >= 0) {
           make_move(b, opp); /* 对手被迫堵五点 */
-          if (vct(side, depth - 1, NULL) != 0) {
-            unmake_move(b, opp);
-            unmake_move(c, side);
-            if (first != NULL) {
-              *first = c;
+          /* 对手这一堵若给它自己造出五威胁，则我方必须回防 -> 此路失败 */
+          if (count_five_points(opp, 1) == 0) {
+            if (vct(side, depth - 1, NULL) != 0) {
+              unmake_move(b, opp);
+              unmake_move(c, side);
+              if (first != NULL) {
+                *first = c;
+              }
+              return 1;
             }
-            return 1;
           }
           unmake_move(b, opp);
         }
@@ -1262,17 +1264,28 @@ static int vct(int side, int depth, int *first)
     } else {
       /* 活三：对手须堵住我方每个造四点；全部堵死才算失败 */
       int dcount = count_four_points(side, 5);
+      int ocount = 0;
       int allfail = 1;
       int tried = 0;
 
-      if ((dcount == 0) || (dcount > 4)) {
+      /* 对手的“五威胁”防守点(反杀)也必须考虑 */
+      for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+        if ((s_cell[idx] == GOMOKU_EMPTY) && (s_near[idx] != 0U) &&
+            ((int)s_pat4[idx][opp] >= P4_E_BLOCK4)) {
+          ++ocount;
+        }
+      }
+      if ((dcount == 0) || (dcount + ocount > 5)) {
         allfail = 0;
       } else {
         for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+          int is_def;
           if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U)) {
             continue;
           }
-          if ((int)s_pat4[idx][side] < P4_E_BLOCK4) {
+          is_def = ((int)s_pat4[idx][side] >= P4_E_BLOCK4) ||
+                   ((int)s_pat4[idx][opp] >= P4_E_BLOCK4);
+          if (is_def == 0) {
             continue;
           }
           make_move(idx, opp);
