@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 struct ContentView: View {
@@ -6,14 +7,17 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(game: game)
-                .navigationSplitViewColumnWidth(min: 264, ideal: 300, max: 360)
+                .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 380)
         } detail: {
             ZStack {
                 Color(nsColor: .windowBackgroundColor)
-                BoardView(game: game).padding(30)
+                VStack(spacing: 10) {
+                    BoardView(game: game).padding(.horizontal, 26).padding(.top, 18)
+                    EvalChart(points: game.evalPoints).padding(.horizontal, 26).padding(.bottom, 14)
+                }
                 resultOverlay
             }
-            .frame(minWidth: 560, minHeight: 640)
+            .frame(minWidth: 600, minHeight: 720)
             .navigationTitle("Rapfi · 五子棋")
         }
         .toolbar {
@@ -28,7 +32,7 @@ struct ContentView: View {
                     Label("悔棋", systemImage: "arrow.uturn.backward")
                 }
                 .keyboardShortcut("z")
-                .disabled(game.lastMove == nil)
+                .disabled(game.moves.isEmpty || game.pendingLock)
                 .help("悔棋 (⌘Z)")
 
                 Button { game.swapSides() } label: {
@@ -37,7 +41,7 @@ struct ContentView: View {
                 .help("交换先后手")
             }
         }
-        .frame(minWidth: 920, minHeight: 720)
+        .frame(minWidth: 960, minHeight: 780)
         .task {
             game.autoConnect()
             game.startMonitoring()
@@ -94,6 +98,52 @@ struct ContentView: View {
         case .engineWin: return .red
         case .draw: return .secondary
         case .playing: return .secondary
+        }
+    }
+}
+
+// MARK: - 形势分析曲线
+
+struct EvalChart: View {
+    let points: [EvalPoint]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("形势分析").font(.headline)
+                Text("白方视角，上=白优 / 下=黑优").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            }
+            if points.isEmpty {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.quaternary)
+                    .frame(height: 120)
+                    .overlay(Text("暂无分析数据").font(.caption).foregroundStyle(.secondary))
+            } else {
+                Chart {
+                    RuleMark(y: .value("均势", 0))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    ForEach(points) { p in
+                        AreaMark(x: .value("手数", p.move), y: .value("形势", p.value))
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(LinearGradient(
+                                colors: [.accentColor.opacity(0.35), .accentColor.opacity(0.02)],
+                                startPoint: .top, endPoint: .bottom))
+                        LineMark(x: .value("手数", p.move), y: .value("形势", p.value))
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+                .chartYScale(domain: -2000...2000)
+                .chartXAxisLabel("手数")
+                .frame(height: 132)
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.background.secondary))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.08)))
+            }
         }
     }
 }
@@ -178,6 +228,42 @@ struct SidebarView: View {
                 }
             }
 
+            Section("着法记录") {
+                if game.moves.isEmpty {
+                    Text("—").font(.caption).foregroundStyle(.tertiary)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(game.moves.reversed()) { m in
+                                HStack(spacing: 8) {
+                                    Text("\(m.index).").monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 26, alignment: .trailing)
+                                    Text(m.side == .black ? "●" : "○")
+                                    Text(m.coord).monospacedDigit()
+                                    Spacer()
+                                    if let s = m.score {
+                                        Text("\(s)").monospacedDigit()
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .font(.caption)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 170)
+                }
+                Button {
+                    game.exportLog()
+                } label: {
+                    Label("导出日志", systemImage: "square.and.arrow.down")
+                }
+                .disabled(game.moves.isEmpty)
+                if let p = game.exportedPath {
+                    Text(p).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+
             Section {
                 Button {
                     game.newGame()
@@ -185,7 +271,7 @@ struct SidebarView: View {
                 Button {
                     game.undo()
                 } label: { Label("悔棋", systemImage: "arrow.uturn.backward") }
-                    .disabled(game.lastMove == nil)
+                    .disabled(game.moves.isEmpty || game.pendingLock)
                 Button {
                     game.swapSides()
                 } label: { Label("交换先后手", systemImage: "arrow.left.arrow.right") }

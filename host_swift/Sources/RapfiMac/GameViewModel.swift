@@ -1,5 +1,5 @@
-import RapfiKit
 import Foundation
+import RapfiKit
 
 enum Side: Int {
     case black = 1
@@ -26,12 +26,41 @@ struct EngineInfo: Equatable {
     var ms = 0
 }
 
+/// 一手记录（含引擎分析），用于日志与分析曲线。
+struct MoveRecord: Identifiable, Equatable {
+    let id = UUID()
+    let index: Int
+    let side: Side
+    let x: Int
+    let y: Int
+    var score: Int?
+    var depth: Int?
+    var nodes: Int?
+    var ms: Int?
+
+    var coord: String {
+        let col = String(UnicodeScalar(UInt8(65 + x)))
+        return "\(col)\(y + 1)"
+    }
+    /// 白方视角评分（+ 表示白优）；仅引擎手有值。
+    var whiteScore: Int? {
+        guard let s = score else { return nil }
+        return side == .white ? s : -s
+    }
+}
+
+/// 分析曲线点。
+struct EvalPoint: Identifiable, Equatable {
+    let id = UUID()
+    let move: Int
+    let value: Int
+}
+
 /// 对局状态 + 定长二进制协议（见固件 project/code/rapfi_protocol.h）。
 @MainActor
 final class GameViewModel: ObservableObject {
     static let n = 15
 
-    // 命令 / 应答 / 长度表
     private enum Cmd {
         static let newGame: UInt8 = 0x01
         static let play: UInt8 = 0x02
@@ -63,15 +92,27 @@ final class GameViewModel: ObservableObject {
     @Published var status: GameStatus = .playing
     @Published var info: EngineInfo?
     @Published var lastMove: Move?
+    @Published var moves: [MoveRecord] = []
     @Published var connected = false
     @Published var connecting = false
     @Published var portPath = ""
     @Published var deviceName = ""
     @Published var serial = ""
     @Published var errorText: String?
+    @Published var exportedPath: String?
 
     var thinking: Bool { pending == .go }
+    /// 有待处理命令时锁定操作（悔棋等）。
+    var pendingLock: Bool { pending != .none }
     var engineSide: Side { human.opposite }
+
+    /// 分析曲线（白方视角，钳位到 ±2000 便于显示）。
+    var evalPoints: [EvalPoint] {
+        moves.compactMap { m in
+            guard let w = m.whiteScore else { return nil }
+            return EvalPoint(move: m.index, value: max(-2000, min(2000, w)))
+        }
+    }
 
     private var pending: Pending = .none
     private var pendingMove: (Int, Int)?
@@ -85,7 +126,6 @@ final class GameViewModel: ObservableObject {
         guard !connected, !connecting else { return }
         connecting = true
         errorText = nil
-
         if let dev = USBMatcher.find() {
             attach(path: dev.path, product: dev.product, serial: dev.serial)
             return
@@ -165,6 +205,7 @@ final class GameViewModel: ObservableObject {
         status = .playing
         info = nil
         lastMove = nil
+        moves.removeAll()
         pendingMove = nil
         pending = .newGame
         sendFrame(Cmd.newGame)
@@ -181,17 +222,26 @@ final class GameViewModel: ObservableObject {
         sendFrame(Cmd.play, UInt8(x), UInt8(y))
     }
 
+    /// 悔棋：撤掉最近两手（引擎一手 + 人一手），回到人类行棋。
     func undo() {
-        guard pending == .none else { return }
+        guard pending == .none, !moves.isEmpty else { return }
+        let n = min(2, moves.count)
         pending = .undo
         pendingMove = nil
-        board = Array(repeating: Array(repeating: 0, count: Self.n), count: Self.n)
-        lastMove = nil
-        info = nil
+        sendFrame(Cmd.undo)
+        if n == 2 { sendFrame(Cmd.undo) }
+        for _ in 0..<n { moves.removeLast() }
+        rebuildLocal()
         status = .playing
         turn = human
-        sendFrame(Cmd.undo)
-        sendFrame(Cmd.undo)
+        info = nil
+    }
+
+    /// 按着法历史重建本地棋盘（悔棋/重连后保证与引擎一致）。
+    private func rebuildLocal() {
+        board = Array(repeating: Array(repeating: 0, count: Self.n), count: Self.n)
+        for m in moves { board[m.y][m.x] = m.side.rawValue }
+        lastMove = moves.last.map { Move(x: $0.x, y: $0.y) }
     }
 
     func adjustDepth(_ delta: Int) { depth = max(1, min(12, depth + delta)) }
@@ -202,13 +252,44 @@ final class GameViewModel: ObservableObject {
                   UInt8(thinkMs & 0xFF), UInt8((thinkMs >> 8) & 0xFF))
     }
 
+    // MARK: - 日志导出
+
+    /// 导出对局日志到 ~/Downloads，返回文件路径。
+    @discardableResult
+    func exportLog() -> String? {
+        let df = DateFormatter()
+        df.dateFormat = "yyyyMMdd-HHmmss"
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Downloads/rapfi-log-\(df.string(from: Date())).txt")
+        var text = "# Rapfi-Embedded 对局日志\n"
+        text += "时间: \(Date())\n"
+        text += "设备: \(deviceName)  \(portPath)\n"
+        text += "人类执: \(human == .black ? "黑" : "白")   搜索: depth \(depth) / \(thinkMs)ms\n\n"
+        text += "手数\t方\t坐标\t评分\t深度\t节点\t耗时ms\n"
+        for m in moves {
+            let sc = m.score.map(String.init) ?? "-"
+            let dp = m.depth.map(String.init) ?? "-"
+            let nd = m.nodes.map(String.init) ?? "-"
+            let ms = m.ms.map(String.init) ?? "-"
+            text += "\(m.index)\t\(m.side == .black ? "黑" : "白")\t\(m.coord)\t\(sc)\t\(dp)\t\(nd)\t\(ms)\n"
+        }
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            exportedPath = url.path
+            return url.path
+        } catch {
+            errorText = "导出失败: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
     // MARK: - 收帧
 
     private func ingest(_ data: Data) {
         rx.append(data)
         while let first = rx.first {
             guard let n = Self.rspLen[first] else {
-                rx.removeFirst()   // 未知类型，丢一字节重新同步
+                rx.removeFirst()
                 continue
             }
             if rx.count < n { break }
@@ -236,19 +317,24 @@ final class GameViewModel: ObservableObject {
     private func handleFrame(_ f: [UInt8]) {
         switch f[0] {
         case Rsp.ok:
-            if pending == .play || pending == .undo {
-                if pending == .play, let (x, y) = pendingMove, board[y][x] == 0 {
+            if pending == .play {
+                pending = .none
+                if let (x, y) = pendingMove, board[y][x] == 0 {
                     board[y][x] = human.rawValue
                     lastMove = Move(x: x, y: y)
+                    moves.append(MoveRecord(index: moves.count + 1, side: human,
+                                            x: x, y: y))
                 }
                 pendingMove = nil
-                pending = .none
                 applyState(f[1], f[2])
                 if status == .playing, turn == engineSide { askEngine() }
             } else if pending == .newGame {
                 pending = .none
                 applyState(f[1], f[2])
                 if turn == engineSide { askEngine() }
+            } else if pending == .undo {
+                pending = .none
+                applyState(f[1], f[2])
             }
         case Rsp.err:
             pending = .none
@@ -260,6 +346,9 @@ final class GameViewModel: ObservableObject {
             if (0..<Self.n).contains(x), (0..<Self.n).contains(y), board[y][x] == 0 {
                 board[y][x] = engineSide.rawValue
                 lastMove = Move(x: x, y: y)
+                moves.append(MoveRecord(index: moves.count + 1, side: engineSide,
+                                        x: x, y: y, score: score, depth: dep,
+                                        nodes: nodes, ms: ms))
             }
             info = EngineInfo(depth: dep, score: score, nodes: nodes, ms: ms)
             pending = .none
@@ -269,7 +358,7 @@ final class GameViewModel: ObservableObject {
         case Rsp.turn:
             turn = (f[1] == 0) ? .black : .white
         default:
-            break   // Rsp.ready
+            break
         }
     }
 }
