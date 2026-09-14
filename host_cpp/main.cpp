@@ -4,8 +4,8 @@
 //   NEW / PLAY x y / GO [depth] [ms] / UNDO / BOARD / STATUS / TURN
 //   答：OK / ERR / MOVE x y score depth nodes time_ms / STATUS ...
 //
-// 键位：方向键或 hjkl 移动光标，Enter/空格 落子，n 新局，f 换先，u 悔棋，
-//       +/- 调深度，q 退出。棋盘上点击也可落子（鼠标）。
+// 键位：方向键或 hjkl 移动光标，Enter/空格 落子，鼠标点击落子，
+//       n 新局，f 换先，u 悔棋，+/- 调深度，q 退出。
 //
 // 构建： cmake -S host_cpp -B host_cpp/build && cmake --build host_cpp/build
 #include <ftxui/component/component.hpp>
@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -33,6 +34,14 @@ using namespace ftxui;
 
 static constexpr int kN = 15;
 enum { kEmpty = 0, kBlack = 1, kWhite = 2 };
+
+// 主题色
+static const Color kWood = Color::RGB(198, 150, 92);
+static const Color kStoneB = Color::RGB(120, 120, 130);
+static const Color kStoneW = Color::RGB(245, 245, 250);
+static const Color kCursor = Color::RGB(46, 74, 122);
+static const Color kLast = Color::RGB(255, 196, 64);
+static const Color kAccent = Color::RGB(120, 200, 255);
 
 // ------------------------------ 串口 ------------------------------
 
@@ -77,7 +86,6 @@ class Serial {
     (void)n;
   }
 
-  // 读取可用字节并切分成完整行。
   std::vector<std::string> read_lines() {
     std::vector<std::string> out;
     char tmp[1024];
@@ -99,7 +107,6 @@ class Serial {
     return out;
   }
 
-  // 带超时的读取（用于端口探测）。
   bool read_for(int ms, std::string* sink) {
     struct pollfd p{};
     p.fd = fd_;
@@ -176,7 +183,7 @@ struct Game {
   bool has_last = false;
   int last_x = 0;
   int last_y = 0;
-  std::string info;
+  std::string info = "—";
   std::string status = "playing";
   std::string pending;  // "" / "PLAY" / "GO"
 
@@ -187,7 +194,7 @@ struct Game {
     std::memset(board, 0, sizeof(board));
     turn = kBlack;
     has_last = false;
-    info.clear();
+    info = "—";
     status = "playing";
     pending.clear();
     eng->send("NEW");
@@ -248,9 +255,10 @@ struct Game {
           last_x = x;
           last_y = y;
         }
-        char buf[128];
-        std::snprintf(buf, sizeof(buf), "depth %d  score %d  %lu nodes  %lu ms",
-                      dep, score, nodes, ms);
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "深度 %-2d  评估 %-8d\n%lu 节点   %lu ms", dep, score,
+                      nodes, ms);
         info = buf;
       }
       turn = human;
@@ -277,38 +285,109 @@ struct Game {
 
 // ------------------------------ 渲染 ------------------------------
 
+static const char* ColName(int x) {
+  static const char* names[kN] = {"A", "B", "C", "D", "E", "F", "G", "H",
+                                  "I", "J", "K", "L", "M", "N", "O"};
+  return names[x];
+}
+
+// 棋盘：每个交叉点 3 格宽，四周坐标。
 static Element BoardElement(const Game& g, int cx, int cy) {
   Elements rows;
-  {
-    Elements h;
-    h.push_back(text("  "));
-    h.push_back(text(" "));
+
+  auto coords = [&] {
+    Elements r;
+    r.push_back(text("   "));
     for (int x = 0; x < kN; ++x) {
-      h.push_back(text(std::string(" ") + static_cast<char>('A' + x)));
+      r.push_back(text(std::string(" ") + ColName(x) + " ") | color(kWood));
     }
-    rows.push_back(hbox(std::move(h)));
-  }
+    r.push_back(text("   "));
+    return hbox(std::move(r));
+  };
+
+  rows.push_back(coords());
   for (int y = kN - 1; y >= 0; --y) {
     Elements r;
     char lbl[8];
-    std::snprintf(lbl, sizeof(lbl), "%2d", y + 1);
-    r.push_back(text(lbl));
-    r.push_back(text(" "));
+    std::snprintf(lbl, sizeof(lbl), "%2d ", y + 1);
+    r.push_back(text(lbl) | color(kWood));
     for (int x = 0; x < kN; ++x) {
       int v = g.board[y][x];
-      std::string s = (v == kBlack) ? " X" : (v == kWhite) ? " O" : " .";
-      Element e = text(s);
+      Element e;
+      if (v == kBlack) {
+        e = text(" ● ") | color(kStoneB) | bold;
+      } else if (v == kWhite) {
+        e = text(" ○ ") | color(kStoneW) | bold;
+      } else {
+        e = text(" · ") | color(Color::RGB(110, 92, 66));
+      }
       if (g.has_last && g.last_x == x && g.last_y == y) {
-        e = e | color(Color::Red);
+        e = e | color(kLast) | bold;
       }
       if (x == cx && y == cy) {
-        e = e | inverted;
+        e = e | bgcolor(kCursor);
       }
       r.push_back(e);
     }
+    char rlbl[8];
+    std::snprintf(rlbl, sizeof(rlbl), " %2d", y + 1);
+    r.push_back(text(rlbl) | color(kWood));
     rows.push_back(hbox(std::move(r)));
   }
+  rows.push_back(coords());
   return vbox(std::move(rows));
+}
+
+static Element InfoPanel(const Game& g, int spin) {
+  Elements v;
+  Element side = (g.turn == g.human)
+                     ? text("你") | bold | color(Color::GreenLight)
+                     : text("引擎") | bold | color(Color::Cyan);
+  v.push_back(hbox({text("轮到   ") | dim, side}) | center);
+
+  if (g.pending == "GO") {
+    static const char* kSpin = "|/-\\";
+    v.push_back(hbox({text("思考中 ") | dim | color(Color::Yellow),
+                      text(std::string(1, kSpin[spin % 4])) | bold |
+                          color(Color::Yellow)}) |
+                center);
+  } else {
+    v.push_back(text("") );
+  }
+
+  v.push_back(separator() | color(kWood));
+  v.push_back(text("引擎分析") | dim);
+  {
+    std::string s = g.info;
+    size_t p;
+    while ((p = s.find('\n')) != std::string::npos) {
+      v.push_back(text(s.substr(0, p)) | color(Color::RGB(200, 200, 200)));
+      s.erase(0, p + 1);
+    }
+    v.push_back(text(s) | color(Color::RGB(200, 200, 200)));
+  }
+
+  v.push_back(separator() | color(kWood));
+  if (g.has_last) {
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%s%d", ColName(g.last_x), g.last_y + 1);
+    v.push_back(hbox({text("最后一手   ") | dim, text(buf) | bold}));
+  } else {
+    v.push_back(text("最后一手   —") | dim);
+  }
+  char d[32];
+  std::snprintf(d, sizeof(d), "搜索深度   %d", g.depth);
+  v.push_back(text(d));
+
+  if (g.status != "playing") {
+    v.push_back(separator() | color(kWood));
+    std::string res = (g.status == "draw")      ? "平 局"
+                      : (g.status == "human")   ? "你 赢 了 ！"
+                                                : "引擎获胜";
+    Color c = (g.status == "human") ? Color::GreenLight : Color::RedLight;
+    v.push_back(text(res) | bold | color(c) | center);
+  }
+  return vbox(std::move(v));
 }
 
 int main(int argc, char** argv) {
@@ -335,7 +414,7 @@ int main(int argc, char** argv) {
     if (glob("/dev/cu.usbmodem*", 0, nullptr, &gl) == 0) {
       for (size_t i = 0; i < gl.gl_pathc && !ser.ok(); ++i) {
         if (!ser.open_port(gl.gl_pathv[i])) continue;
-        ser.read_lines();  // 清空
+        ser.read_lines();
         ser.write_line("TURN");
         std::string resp;
         for (int k = 0; k < 6 && resp.find("TURN") == std::string::npos; ++k) {
@@ -361,36 +440,35 @@ int main(int argc, char** argv) {
   game.new_game(human);
 
   int cx = 7, cy = 7;
-  // 棋盘在屏幕上的固定偏移（标题 1 行 + 分隔 1 行 + 列标题 1 行；列偏移 3）。
-  constexpr int kBoardOriginY = 3;
-  constexpr int kBoardOriginX = 3;
+  int frame = 0;
+
+  // 鼠标坐标映射：棋盘面板在左上角，外框 1 格；每交叉点 3 格宽。
+  //   屏幕 x = 4 + 3*bx ；屏幕 y = 16 - by
+  constexpr int kOriginX = 4;
+  constexpr int kOriginY = 16;
 
   auto renderer = Renderer([&] {
-    std::string head;
-    if (game.status == "playing") {
-      head = (game.turn == game.human) ? "轮到 你" : "轮到 引擎";
-      if (game.pending == "GO") head += "  (思考中...)";
-    } else if (game.status == "draw") {
-      head = "平局";
-    } else {
-      head = (game.status == "human") ? "你赢了！" : "引擎获胜";
-    }
-    std::string result;
-    if (game.status != "playing") {
-      result = (game.status == "draw") ? "= 平局 ="
-               : (game.status == "human") ? "= 你赢了！ =" : "= 引擎获胜 =";
-    }
+    Element board = window(text(" Rapfi-Embedded ") | bold | color(kAccent),
+                           BoardElement(game, cx, cy) | color(kWood)) |
+                    size(HEIGHT, EQUAL, 17);
+    Element info = window(text(" 对局 ") | color(kAccent),
+                          InfoPanel(game, frame)) |
+                   size(WIDTH, GREATER_THAN, 28) |
+                   size(HEIGHT, EQUAL, 17) | flex;
+    Element help =
+        hbox({
+            text(" 移动 ") | dim, text("↑↓←→/hjkl"),
+            text("   落子 ") | dim, text("Enter / 鼠标"),
+            text("   新局 ") | dim, text("n"),
+            text("   换先 ") | dim, text("f"),
+            text("   悔棋 ") | dim, text("u"),
+            text("   思考 ") | dim, text("+/-"),
+            text("   退出 ") | dim, text("q"),
+        }) |
+        center;
     return vbox({
-               text("Rapfi-Embedded Gomoku  (STM32G474)") | bold,
-               separator(),
-               BoardElement(game, cx, cy),
-               separator(),
-               text(head) | bold,
-               text(game.info),
-               result.empty() ? text("") : text(result) | bold | color(Color::Yellow),
-               text("方向键/hjkl 移动  Enter 落子  鼠标点击  n 新局  f 换先  u "
-                    "悔棋  +/- 深度  q 退出") |
-                   dim,
+               hbox({board, info}) | flex,
+               help | border | color(kWood),
            }) |
            yflex_grow;
   });
@@ -398,6 +476,7 @@ int main(int argc, char** argv) {
   auto component = CatchEvent(renderer, [&](Event e) {
     if (e == Event::Custom) {
       game.poll();
+      ++frame;
       return true;
     }
     if (e == Event::Character('q')) {
@@ -447,8 +526,8 @@ int main(int argc, char** argv) {
     if (e.is_mouse()) {
       if (e.mouse().button == Mouse::Left &&
           e.mouse().motion == Mouse::Pressed) {
-        int bx = (e.mouse().x - kBoardOriginX) / 2;
-        int by = (kN - 1) - (e.mouse().y - kBoardOriginY);
+        int bx = (e.mouse().x - kOriginX) / 3;
+        int by = kOriginY - e.mouse().y;
         if (bx >= 0 && bx < kN && by >= 0 && by < kN) {
           cx = bx;
           cy = by;
