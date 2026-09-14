@@ -3,12 +3,13 @@
 #include "usbd_desc.h"
 #include "usbd_conf.h"
 
-/** @brief USB 厂商/产品 ID（沿用 ST CDC 示例值）。 */
+/** @brief USB 厂商/产品 ID。
+ *  VID 保持 ST 的 0x0483；PID 用本项目自定义值 0x5250（避开 ST 示例的 0x5740）。 */
 #define USBD_VID                      0x0483U
-#define USBD_PID                      0x5740U
+#define USBD_PID                      0x5250U
 #define USBD_LANGID_STRING            1033U
-#define USBD_MANUFACTURER_STRING      "STMicroelectronics"
-#define USBD_PRODUCT_STRING_FS        "STM32G474 CDC"
+#define USBD_MANUFACTURER_STRING      "Rapfi"
+#define USBD_PRODUCT_STRING_FS        "Rapfi Gomoku Engine"
 #define USBD_CONFIGURATION_STRING_FS  "CDC Config"
 #define USBD_INTERFACE_STRING_FS      "CDC Interface"
 

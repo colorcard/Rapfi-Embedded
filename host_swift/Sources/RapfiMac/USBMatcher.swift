@@ -14,8 +14,8 @@ enum USBMatcher {
         let pid: Int
     }
 
-    /// 查找匹配 VID:PID 的 CDC 串口。默认 STM32 虚拟串口 0x0483:0x5740。
-    static func find(vendor wantVid: Int = 0x0483, pid wantPid: Int = 0x5740) -> Device? {
+    /// 查找匹配 VID:PID 的 CDC 串口。默认本项目 Rapfi 引擎 0x0483:0x5250。
+    static func find(vendor wantVid: Int = 0x0483, pid wantPid: Int = 0x5250) -> Device? {
         var iterator: io_iterator_t = 0
         guard let matching = IOServiceMatching("IOSerialBSDClient"),
               IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS
@@ -38,7 +38,7 @@ enum USBMatcher {
     }
 
     /// 列出所有 STM32 串口（可能多个）。
-    static func findAll(vendor wantVid: Int = 0x0483, pid wantPid: Int = 0x5740) -> [Device] {
+    static func findAll(vendor wantVid: Int = 0x0483, pid wantPid: Int = 0x5250) -> [Device] {
         var result: [Device] = []
         var iterator: io_iterator_t = 0
         guard let matching = IOServiceMatching("IOSerialBSDClient"),

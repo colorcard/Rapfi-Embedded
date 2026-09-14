@@ -83,7 +83,7 @@ final class GameViewModel: ObservableObject {
                     self.connecting = false
                     self.errorText = cands.isEmpty
                         ? "未发现 USB 串口设备"
-                        : "未找到 STM32 引擎（VID 0x0483:0x5740）"
+                        : "未找到 STM32 引擎（VID 0x0483:0x5250）"
                 }
             }
         }
