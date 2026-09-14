@@ -88,8 +88,8 @@ final class GameViewModel: ObservableObject {
         repeating: Array(repeating: 0, count: n), count: n)
     @Published var turn: Side = .black
     @Published var human: Side = .black
-    @Published var depth = 6
-    @Published var thinkMs = 2000
+    @Published var depth = 12
+    @Published var thinkMs = 5000
     @Published var status: GameStatus = .playing
     @Published var info: EngineInfo?
     @Published var lastMove: Move?

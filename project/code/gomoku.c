@@ -112,6 +112,9 @@ static gomoku_stop_fn s_stop_hook;
 /** @brief VCF 节点预算，避免不限时时指数爆炸。 */
 static uint32_t s_vcf_nodes;
 #define VCF_NODE_LIMIT 400000U
+/** @brief VCT 节点预算。 */
+static uint32_t s_vct_nodes;
+#define VCT_NODE_LIMIT 300000U
 /* 三角 PV 表（每层的最佳线路），以及根 PV 供协议回传 */
 static uint8_t s_pv[MAX_PLY][MAX_PLY];
 static uint8_t s_pv_len[MAX_PLY];
@@ -1145,6 +1148,162 @@ static int vcf(int side, int depth, int *first)
 /**
  * @brief 根节点搜索：返回最佳着法与评分。
  */
+/* ------------------------------ VCT（连续威胁：四 + 活三） ------------------------------ */
+
+/** @brief 我方造四点数量（Pattern4 >= 冲四）。 */
+static int count_four_points(int side, int max)
+{
+  int idx;
+  int cnt = 0;
+
+  for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+    if ((s_cell[idx] == GOMOKU_EMPTY) && (s_near[idx] != 0U) &&
+        ((int)s_pat4[idx][side] >= P4_E_BLOCK4)) {
+      if (++cnt >= max) {
+        return cnt;
+      }
+    }
+  }
+  return cnt;
+}
+
+/** @brief VCT 可打断检查（预算/时限/中断钩子）。 */
+static int vct_abort(void)
+{
+  if (++s_vct_nodes > VCT_NODE_LIMIT) {
+    return 1;
+  }
+  if ((s_stop_hook != NULL) && (s_stop_hook() != 0)) {
+    return 1;
+  }
+  if ((s_time_limited != 0) &&
+      ((int32_t)(DWT->CYCCNT - s_deadline) >= 0)) {
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * @brief 连续威胁搜索(VCT)：只走能造四或活三的着法。
+ *  - 我方造四 -> 对手被迫堵五点，继续
+ *  - 我方活三 -> 对手须堵住我方每个造四点；全部堵死才算此路失败
+ * @return 1 必胜，0 未找到。
+ */
+static int vct(int side, int depth, int *first)
+{
+  int opp = 3 - side;
+  int cand[MAX_PLY];
+  int n = 0;
+  int idx;
+  int i;
+
+  if (depth <= 0) {
+    return 0;
+  }
+  if (vct_abort() != 0) {
+    return 0;
+  }
+  if (count_five_points(side, 1) > 0) {
+    return 1;
+  }
+
+  for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+    if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U)) {
+      continue;
+    }
+    if ((int)s_pat4[idx][side] >= P4_H_FLEX3) {
+      if (n < MAX_PLY) {
+        cand[n] = idx;
+        ++n;
+      }
+    }
+  }
+  /* 插入排序：威胁强的优先 */
+  for (i = 1; i < n; ++i) {
+    int ci = cand[i];
+    int pi = (int)s_pat4[ci][side];
+    int j = i - 1;
+    while ((j >= 0) && ((int)s_pat4[cand[j]][side] < pi)) {
+      cand[j + 1] = cand[j];
+      --j;
+    }
+    cand[j + 1] = ci;
+  }
+
+  for (i = 0; i < n; ++i) {
+    int c = cand[i];
+    int fp;
+
+    make_move(c, side);
+    fp = count_five_points(side, 2);
+    if (fp >= 2) {
+      unmake_move(c, side);
+      if (first != NULL) {
+        *first = c;
+      }
+      return 1; /* 活四/双四 */
+    }
+    if (fp == 1) {
+      if (count_five_points(opp, 1) == 0) {
+        int b = find_five_point(side);
+        if (b >= 0) {
+          make_move(b, opp); /* 对手被迫堵五点 */
+          if (vct(side, depth - 1, NULL) != 0) {
+            unmake_move(b, opp);
+            unmake_move(c, side);
+            if (first != NULL) {
+              *first = c;
+            }
+            return 1;
+          }
+          unmake_move(b, opp);
+        }
+      }
+    } else {
+      /* 活三：对手须堵住我方每个造四点；全部堵死才算失败 */
+      int dcount = count_four_points(side, 5);
+      int allfail = 1;
+      int tried = 0;
+
+      if ((dcount == 0) || (dcount > 4)) {
+        allfail = 0;
+      } else {
+        for (idx = 0; idx < GOMOKU_CELLS; ++idx) {
+          if ((s_cell[idx] != GOMOKU_EMPTY) || (s_near[idx] == 0U)) {
+            continue;
+          }
+          if ((int)s_pat4[idx][side] < P4_E_BLOCK4) {
+            continue;
+          }
+          make_move(idx, opp);
+          if (count_five_points(opp, 1) > 0) {
+            unmake_move(idx, opp);
+            allfail = 0;
+            break;
+          }
+          if (vct(side, depth - 1, NULL) == 0) {
+            allfail = 0;
+          }
+          unmake_move(idx, opp);
+          ++tried;
+          if (allfail == 0) {
+            break;
+          }
+        }
+      }
+      if ((allfail != 0) && (tried > 0)) {
+        unmake_move(c, side);
+        if (first != NULL) {
+          *first = c;
+        }
+        return 1;
+      }
+    }
+    unmake_move(c, side);
+  }
+  return 0;
+}
+
 static void search_root(int side, int depth, int alpha, int beta,
                         int *best_idx, int *out_score)
 {
@@ -1276,15 +1435,15 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
       goto done;
     }
   }
-  /* 3) VCF：连四必杀。给 VCF 单独的小预算(时限的 1/4，上限 500ms)，
-     否则它可能吃掉整个时限，导致主搜索只到很浅的深度。 */
+  /* 3) VCF/VCT：连续威胁必杀搜索。给它们单独的小预算(时限的 1/4，上限 800ms)，
+     否则可能吃掉整个时限，导致主搜索只到很浅的深度。 */
   {
     uint32_t full_deadline = s_deadline;
     s_vcf_nodes = 0U;
     if (time_limit_ms > 0U) {
       uint32_t budget = (uint32_t)(((uint64_t)time_limit_ms * 170000ULL) / 4ULL);
-      if (budget > 85000000U) { /* 500ms */
-        budget = 85000000U;
+      if (budget > 136000000U) { /* 800ms */
+        budget = 136000000U;
       }
       s_deadline = DWT->CYCCNT + budget;
     }
@@ -1292,6 +1451,13 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
       s_deadline = full_deadline;
       best_idx = vcf_move;
       best_score = SCORE_WIN - 2;
+      goto done;
+    }
+    s_vct_nodes = 0U;
+    if (vct(side, VCF_MAX_PLY, &vcf_move) != 0 && vcf_move >= 0) {
+      s_deadline = full_deadline;
+      best_idx = vcf_move;
+      best_score = SCORE_WIN - 3;
       goto done;
     }
     s_deadline = full_deadline;
