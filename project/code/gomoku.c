@@ -171,6 +171,11 @@ void gomoku_init(void)
   }
   memset(s_tt, 0, sizeof(s_tt));
 
+  /* 启用 DWT 周期计数器（搜索时限用）。 */
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0U;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
   /* 生成行/列/斜线（长度 >= 5）。 */
   {
     int d;
@@ -362,49 +367,6 @@ static const int32_t s_p4_score[PATTERN4_NB] = {
 CCMRAM static uint8_t s_pat_cell[GOMOKU_CELLS][4];
 CCMRAM static uint8_t s_pat4[GOMOKU_CELLS][3];
 
-/* 4 方向组合 -> Pattern4（移植自 pattern.cpp getPattern4<false>） */
-static int pattern4_of(int p1, int p2, int p3, int p4)
-{
-  int nf5 = 0, nf4 = 0, nf3 = 0, nf3s = 0, nb4 = 0, nb3 = 0, nf2 = 0;
-  int ps[4];
-  int i;
-
-  ps[0] = p1; ps[1] = p2; ps[2] = p3; ps[3] = p4;
-  for (i = 0; i < 4; ++i) {
-    int p = ps[i];
-    if (p == PAT_F5) { ++nf5; }
-    else if (p == PAT_F4) { ++nf4; }
-    else if (p == PAT_F3) { ++nf3; }
-    else if (p == PAT_F3S) { ++nf3s; }
-    else if ((p == PAT_B4) || (p == PAT_B4S)) { ++nb4; }
-    else if ((p == PAT_B3) || (p == PAT_B3S)) { ++nb3; }
-    else if ((p == PAT_F2) || (p == PAT_F2A) || (p == PAT_F2B)) { ++nf2; }
-  }
-
-  if (nf5 >= 1) return P4_A_FIVE;
-  if (nb4 >= 2) return P4_B_FLEX4;
-  if (nf4 >= 1) return P4_B_FLEX4;
-  if (nb4 >= 1) {
-    if ((nf3 >= 1) || (nf3s >= 1)) return P4_C_BLOCK4_FLEX3;
-    if (nb3 >= 1) return P4_D_BLOCK4_PLUS;
-    if (nf2 >= 1) return P4_D_BLOCK4_PLUS;
-    return P4_E_BLOCK4;
-  }
-  if ((nf3 >= 1) || (nf3s >= 1)) {
-    if ((nf3 + nf3s) >= 2) return P4_F_FLEX3_2X;
-    if (nb3 >= 1) return P4_G_FLEX3_PLUS;
-    if (nf2 >= 1) return P4_G_FLEX3_PLUS;
-    return P4_H_FLEX3;
-  }
-  if (nb3 >= 1) {
-    if (nb3 >= 2) return P4_I_BLOCK3_PLUS;
-    if (nf2 >= 1) return P4_I_BLOCK3_PLUS;
-  }
-  if (nf2 >= 2) return P4_J_FLEX2_2X;
-  if (nb3 >= 1) return P4_K_BLOCK3;
-  if (nf2 >= 1) return P4_L_FLEX2;
-  return P4_NONE;
-}
 
 /** @brief 某格沿 (dx,dy) 的密编码（中心视为空，4 格两翼）。 */
 static uint32_t cell_line_key(int x, int y, int dx, int dy)
@@ -448,12 +410,16 @@ static void pat_cell_refresh(int idx, int d)
 /** @brief 由 4 方向 Pattern2x 重算格 idx 的两方 Pattern4。 */
 static void pat4_refresh(int idx)
 {
-  s_pat4[idx][GOMOKU_BLACK] =
-      (uint8_t)pattern4_of(s_pat_cell[idx][0] & 0x0F, s_pat_cell[idx][1] & 0x0F,
-                           s_pat_cell[idx][2] & 0x0F, s_pat_cell[idx][3] & 0x0F);
-  s_pat4[idx][GOMOKU_WHITE] =
-      (uint8_t)pattern4_of(s_pat_cell[idx][0] >> 4, s_pat_cell[idx][1] >> 4,
-                           s_pat_cell[idx][2] >> 4, s_pat_cell[idx][3] >> 4);
+  int i0 = (int)(s_pat_cell[idx][0] & 0x0F);
+  int i1 = (int)(s_pat_cell[idx][1] & 0x0F);
+  int i2 = (int)(s_pat_cell[idx][2] & 0x0F);
+  int i3 = (int)(s_pat_cell[idx][3] & 0x0F);
+  s_pat4[idx][GOMOKU_BLACK] = PAT4_TABLE[((i0 * 16 + i1) * 16 + i2) * 16 + i3];
+  i0 = (int)(s_pat_cell[idx][0] >> 4);
+  i1 = (int)(s_pat_cell[idx][1] >> 4);
+  i2 = (int)(s_pat_cell[idx][2] >> 4);
+  i3 = (int)(s_pat_cell[idx][3] >> 4);
+  s_pat4[idx][GOMOKU_WHITE] = PAT4_TABLE[((i0 * 16 + i1) * 16 + i2) * 16 + i3];
 }
 
 /** @brief 全盘重建逐格棋型（新局时调用）。 */
@@ -939,7 +905,7 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
 
   ++s_nodes;
   if ((s_time_limited != 0) && ((s_nodes & 0x3FFU) == 0U) &&
-      ((int32_t)(HAL_GetTick() - s_deadline) >= 0)) {
+      ((int32_t)(DWT->CYCCNT - s_deadline) >= 0)) {
     s_abort = 1;
     return 0;
   }
@@ -1230,7 +1196,8 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
 
   s_nodes = 0U;
   s_time_limited = (time_limit_ms > 0U) ? 1 : 0;
-  s_deadline = t0 + time_limit_ms;
+  s_deadline = DWT->CYCCNT +
+               (uint32_t)((uint64_t)time_limit_ms * 170000ULL);
   s_abort = 0;
   memset(s_killer, 0xFF, sizeof(s_killer));
 
@@ -1299,7 +1266,7 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
     if (s_ncand[0] <= 1) {
       break;
     }
-    if ((s_time_limited != 0) && ((int32_t)(HAL_GetTick() - s_deadline) >= 0)) {
+    if ((s_time_limited != 0) && ((int32_t)(DWT->CYCCNT - s_deadline) >= 0)) {
       break;
     }
   }
