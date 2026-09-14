@@ -7,6 +7,8 @@
 
 #include "rapfi_pattern_tables.h"
 
+#define CCMRAM __attribute__((section(".ccmram")))
+
 /** @brief 每格最多所属的 5 连窗口数（4 方向 × 5 个偏移）。 */
 #define GWIN_PER_CELL   20
 /** @brief 5 连窗口总数上限（横 165 + 竖 165 + 斜 121×2）。 */
@@ -42,8 +44,8 @@ static const int32_t s_win_score[6] = {0, 1, 6, 30, 200, SCORE_WIN};
 
 /* ------------------------------ 棋盘状态 ------------------------------ */
 
-static uint8_t s_cell[GOMOKU_CELLS];
-static uint8_t s_near[GOMOKU_CELLS]; /* 附近 2 格内的邻子计数，增量维护 */
+CCMRAM static uint8_t s_cell[GOMOKU_CELLS];
+CCMRAM static uint8_t s_near[GOMOKU_CELLS]; /* 附近 2 格内的邻子计数，增量维护 */
 static uint8_t s_hist_cell[GOMOKU_CELLS];
 static uint8_t s_hist_side[GOMOKU_CELLS];
 static int s_hist_n;
@@ -54,27 +56,27 @@ static uint32_t s_hash;
 
 /* SWAR 位棋盘：每方 4 个视图（行/列/↘/↙），每条线一个 lane（bit=x）。
    连五判定用 m&(m>>1)&(m>>2)&(m>>3)&(m>>4)，寄存器内并行。 */
-static uint32_t s_bb[2][4][29];
+CCMRAM static uint32_t s_bb[2][4][29];
 
 /* ------------------------------ 窗口索引 ------------------------------ */
 
-static uint16_t s_win[GWIN_MAX][5];
+CCMRAM static uint16_t s_win[GWIN_MAX][5];
 static uint16_t s_nwin;
-static uint8_t s_cell_win[GOMOKU_CELLS][GWIN_PER_CELL];
-static uint8_t s_cell_win_n[GOMOKU_CELLS];
+CCMRAM static uint8_t s_cell_win[GOMOKU_CELLS][GWIN_PER_CELL];
+CCMRAM static uint8_t s_cell_win_n[GOMOKU_CELLS];
 /** @brief 每个 5 连窗口内各方子数（增量维护，下标 1/2）。 */
-static uint8_t s_win_cnt[3][GWIN_MAX];
+CCMRAM static uint8_t s_win_cnt[3][GWIN_MAX];
 /** @brief 每方“含 4 子”的窗口数（增量维护，>0 才可能有成五点）。 */
-static uint16_t s_four_win[3];
+CCMRAM static uint16_t s_four_win[3];
 
 /** @brief 棋型评估用的“线”（行/列/两向斜线）。 */
 #define GLINE_MAX 96
-static uint8_t s_line_cells[GLINE_MAX][GOMOKU_N];
-static uint8_t s_line_len[GLINE_MAX];
+CCMRAM static uint8_t s_line_cells[GLINE_MAX][GOMOKU_N];
+CCMRAM static uint8_t s_line_len[GLINE_MAX];
 static uint8_t s_line_dir[GLINE_MAX];
 static int s_nline;
 /** @brief 增量棋型分：每条线每方分值，以及双方总分。 */
-static int32_t s_line_pat[GLINE_MAX][3];
+CCMRAM static int32_t s_line_pat[GLINE_MAX][3];
 static int32_t s_pat[3];
 /** @brief 每格在 4 个方向上所属的线（0xFF 表示不在任何 >=5 的线上）。 */
 static uint8_t s_cell_line[GOMOKU_CELLS][4];
@@ -357,8 +359,8 @@ static const int32_t s_p4_score[PATTERN4_NB] = {
 };
 
 /* 逐格棋型状态：每格 4 方向的 Pattern2x（低4位黑/高4位白），及两方 Pattern4 */
-static uint8_t s_pat_cell[GOMOKU_CELLS][4];
-static uint8_t s_pat4[GOMOKU_CELLS][3];
+CCMRAM static uint8_t s_pat_cell[GOMOKU_CELLS][4];
+CCMRAM static uint8_t s_pat4[GOMOKU_CELLS][3];
 
 /* 4 方向组合 -> Pattern4（移植自 pattern.cpp getPattern4<false>） */
 static int pattern4_of(int p1, int p2, int p3, int p4)

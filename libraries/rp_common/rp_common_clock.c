@@ -36,4 +36,11 @@ void clock_init(void)
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK) {
     error_handler();
   }
+
+  /* 开启 ART 加速器：指令缓存 + 数据缓存 + 预取。
+   * 170MHz 下 Flash 为 4 等待周期；本工程频繁读取 Flash 中的棋型查表，
+   * 打开 D-Cache 收益明显。HAL_RCC_ClockConfig 不会自动开。 */
+  __HAL_FLASH_INSTRUCTION_CACHE_ENABLE();
+  __HAL_FLASH_DATA_CACHE_ENABLE();
+  __HAL_FLASH_PREFETCH_BUFFER_ENABLE();
 }
