@@ -6,8 +6,8 @@
 #define APP_TX_DATA_SIZE  512U
 
 extern USBD_HandleTypeDef hUsbDeviceFS;
-/** @brief App 层收到的数据回调（定义在 zf_device_usb_cdc.c）。 */
-extern void zf_usb_cdc_on_rx(const uint8_t *data, uint32_t len);
+/** @brief App 层收到的数据回调（定义在 rp_device_usb_cdc.c）。 */
+extern void rp_usb_cdc_on_rx(const uint8_t *data, uint32_t len);
 
 static uint8_t s_rx_buf[APP_RX_DATA_SIZE];
 static uint8_t s_tx_buf[APP_TX_DATA_SIZE];
@@ -60,7 +60,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t *pbuf, uint16_t length)
 
 static int8_t CDC_Receive_FS(uint8_t *Buf, uint32_t *Len)
 {
-  zf_usb_cdc_on_rx(Buf, *Len);
+  rp_usb_cdc_on_rx(Buf, *Len);
   (void)USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   (void)USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (int8_t)USBD_OK;

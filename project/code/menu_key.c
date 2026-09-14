@@ -1,6 +1,6 @@
 #include "menu_key.h"
 
-#include "zf_device_key.h"
+#include "rp_device_key.h"
 
 #define MENU_KEY_DEBOUNCE_TICKS 1U   /**< 按下消抖所需的 10 ms 周期数。 */
 #define MENU_KEY_LONG_TICKS     100U /**< 判定长按所需的 10 ms 周期数。 */

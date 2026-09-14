@@ -1,5 +1,5 @@
-#include "zf_common_headfile.h"
-#include "zf_device_usb_cdc.h"
+#include "rp_common_headfile.h"
+#include "rp_device_usb_cdc.h"
 #include "rapfi_app.h"
 
 /**
@@ -14,7 +14,7 @@ int main(void)
 
   HAL_Init();
   clock_init();
-  if (bsp_init() != ZF_OK) {
+  if (bsp_init() != RP_OK) {
     error_handler();
   }
 

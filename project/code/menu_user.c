@@ -3,12 +3,12 @@
 #include <math.h>
 
 #include "menu_view.h"
-#include "zf_common_debug.h"
-#include "zf_device_buzzer.h"
-#include "zf_device_imu660ra.h"
-#include "zf_device_power.h"
-#include "zf_driver_adc.h"
-#include "zf_driver_rtc.h"
+#include "rp_common_debug.h"
+#include "rp_device_buzzer.h"
+#include "rp_device_imu660ra.h"
+#include "rp_device_power.h"
+#include "rp_driver_adc.h"
+#include "rp_driver_rtc.h"
 
 static void menu_user_key_remap_test(menu_action_enum action);
 static void menu_user_placeholder(menu_action_enum action);
@@ -233,10 +233,10 @@ static void menu_user_param_draw(bool full)
   uint32_t voltage_mv = 0U;
   uint16_t adc_raw = 0U;
 
-  if (adc_convert(ADC4_IN4, &adc_raw) != ZF_OK) {
+  if (adc_convert(ADC4_IN4, &adc_raw) != RP_OK) {
     adc_raw = 0U;
   }
-  if (power_read_voltage_mv(&voltage_mv) != ZF_OK) {
+  if (power_read_voltage_mv(&voltage_mv) != RP_OK) {
     voltage_mv = 0U;
   }
 
@@ -359,8 +359,8 @@ static void menu_user_imu_update(void)
   int16_t gyro[3];
   int16_t temperature = 0;
 
-  if ((imu660ra_read_accel(acc) != ZF_OK) ||
-      (imu660ra_read_gyro(gyro) != ZF_OK)) {
+  if ((imu660ra_read_accel(acc) != RP_OK) ||
+      (imu660ra_read_gyro(gyro) != RP_OK)) {
     imu_data.valid = false;
     return;
   }
@@ -381,7 +381,7 @@ static void menu_user_imu_update(void)
     imu_data.roll_d10 = (int16_t)lroundf(atan2f(ay, az) * 572.9578f);
   }
 
-  if (imu660ra_read_temperature(&temperature) == ZF_OK) {
+  if (imu660ra_read_temperature(&temperature) == RP_OK) {
     /* 摄氏度 = 23 + raw/512，转 0.1℃：230 + raw*10/512。 */
     imu_data.temp_d10 = (int16_t)(230 + ((int32_t)temperature * 10) / 512);
   } else {

@@ -6,9 +6,9 @@ cmake_minimum_required(VERSION 3.22)
 # 目录结构：
 #   Drivers/            STM32 HAL / CMSIS（厂商底层）
 #   libraries/sdk/      system、HAL 配置、newlib 桩
-#   libraries/zf_common 公共层（时钟、延时、BSP 入口、中断）
-#   libraries/zf_driver 芯片外设驱动层
-#   libraries/zf_device 外接设备驱动层（含 USB CDC 传输）
+#   libraries/rp_common 公共层（时钟、延时、BSP 入口、中断）
+#   libraries/rp_driver 芯片外设驱动层
+#   libraries/rp_device 外接设备驱动层（含 USB CDC 传输）
 #   project/user        框架入口（main / isr）
 #   project/code        用户业务代码（引擎/界面）
 #
@@ -92,38 +92,38 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${HAL_DIR}/stm32g4xx_ll_usb.c
 
     # 公共层
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_bsp.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_clock.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_debug.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_delay.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_fault.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_fifo.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common/zf_common_interrupt.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_bsp.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_clock.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_debug.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_delay.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_fault.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_fifo.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common/rp_common_interrupt.c
 
     # 芯片外设驱动层
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_adc.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_can.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_encoder.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_gpio.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_i2c.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_pit.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_pwm.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_rtc.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_spi.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_timer.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_uart.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver/zf_driver_watchdog.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_adc.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_can.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_encoder.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_gpio.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_i2c.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_pit.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_pwm.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_rtc.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_spi.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_timer.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_uart.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver/rp_driver_watchdog.c
 
     # 外接设备驱动层
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_buzzer.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_imu660ra.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_key.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_lcd_hw.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_led.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_nrf24l01.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_power.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_servo.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_w25q128.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_buzzer.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_imu660ra.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_key.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_lcd_hw.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_led.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_nrf24l01.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_power.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_servo.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_w25q128.c
 
     # 框架入口
     ${CMAKE_SOURCE_DIR}/project/user/src/main.c
@@ -149,7 +149,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/usb/usbd_conf.c
     ${CMAKE_SOURCE_DIR}/libraries/usb/usbd_desc.c
     ${CMAKE_SOURCE_DIR}/libraries/usb/usbd_cdc_if.c
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device/zf_device_usb_cdc.c
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device/rp_device_usb_cdc.c
 )
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/libraries/usb
@@ -166,9 +166,9 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/Device/ST/STM32G4xx/Include
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/Include
     ${CMAKE_SOURCE_DIR}/libraries/sdk
-    ${CMAKE_SOURCE_DIR}/libraries/zf_common
-    ${CMAKE_SOURCE_DIR}/libraries/zf_driver
-    ${CMAKE_SOURCE_DIR}/libraries/zf_device
+    ${CMAKE_SOURCE_DIR}/libraries/rp_common
+    ${CMAKE_SOURCE_DIR}/libraries/rp_driver
+    ${CMAKE_SOURCE_DIR}/libraries/rp_device
     ${CMAKE_SOURCE_DIR}/project/code
 )
 

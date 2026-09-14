@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 #include "gomoku.h"
-#include "zf_device_usb_cdc.h"
+#include "rp_device_usb_cdc.h"
 
 /** @brief 单行命令最大长度。 */
 #define LINE_MAX      160U
