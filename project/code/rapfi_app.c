@@ -1,141 +1,184 @@
 #include "rapfi_app.h"
 
-#include <stdio.h>
-
 #include "gomoku.h"
+#include "rapfi_protocol.h"
 #include "rp_device_usb_cdc.h"
 
-/** @brief 单行命令最大长度。 */
-#define LINE_MAX      160U
-/** @brief 棋盘文本缓冲大小。 */
-#define BOARD_TEXT_SZ 600U
-/** @brief 默认搜索深度。 */
-#define DEFAULT_DEPTH 6
-/** @brief 默认搜索时间上限（毫秒）。 */
-#define DEFAULT_TIME  3000U
-
-static char s_line[LINE_MAX];
-static uint32_t s_line_len;
+/** @brief 帧装配缓冲。 */
+static uint8_t s_frame[RAPFI_CMD_LEN];
+static uint32_t s_frame_len;
+/** @brief 上一个帧字节到达时刻，用于空闲复位。 */
+static uint32_t s_frame_tick;
+/** @brief 半帧超时（ms）：超过则丢弃，避免出错位后卡死。 */
+#define FRAME_IDLE_TIMEOUT_MS 50U
+/** @brief 当前轮到的一方。 */
 static int s_turn;
 
 /**
- * @brief 大小写不敏感的字符串比较。
- * @param a 字符串一。
- * @param b 字符串二。
- * @return 相等返回 1，否则 0。
+ * @brief 把对局胜负映射为协议状态码。
+ * @return RAPFI_ST_*。
  */
-static int ci_equal(const char *a, const char *b)
+static uint8_t status_code(void)
 {
-  while ((*a != '\0') && (*b != '\0')) {
-    char ca = *a;
-    char cb = *b;
-    if ((ca >= 'a') && (ca <= 'z')) {
-      ca = (char)(ca - 'a' + 'A');
-    }
-    if ((cb >= 'a') && (cb <= 'z')) {
-      cb = (char)(cb - 'a' + 'A');
-    }
-    if (ca != cb) {
-      return 0;
-    }
-    ++a;
-    ++b;
+  int st = gomoku_status();
+  if (st == GOMOKU_EMPTY) {
+    return RAPFI_ST_PLAYING;
   }
-  return (*a == '\0') && (*b == '\0');
+  if (st == GOMOKU_DRAW) {
+    return RAPFI_ST_DRAW;
+  }
+  return (st == GOMOKU_BLACK) ? RAPFI_ST_BLACK : RAPFI_ST_WHITE;
+}
+
+/** @brief 当前轮到方的协议编码（0=黑 1=白）。 */
+static uint8_t turn_code(void)
+{
+  return (s_turn == GOMOKU_BLACK) ? 0U : 1U;
+}
+
+/** @brief 小端写入 u32。 */
+static void put_u32(uint8_t *p, uint32_t v)
+{
+  p[0] = (uint8_t)v;
+  p[1] = (uint8_t)(v >> 8);
+  p[2] = (uint8_t)(v >> 16);
+  p[3] = (uint8_t)(v >> 24);
+}
+
+static void reply_ok(void)
+{
+  uint8_t b[RAPFI_OK_LEN] = {RAPFI_RSP_OK, status_code(), turn_code()};
+  (void)usb_cdc_write(b, sizeof(b));
+}
+
+static void reply_err(void)
+{
+  uint8_t b = RAPFI_RSP_ERR;
+  (void)usb_cdc_write(&b, 1U);
+}
+
+static void reply_status(void)
+{
+  uint8_t b[RAPFI_OK_LEN] = {RAPFI_RSP_STATUS, status_code(), turn_code()};
+  (void)usb_cdc_write(b, sizeof(b));
+}
+
+static void reply_turn(void)
+{
+  uint8_t b[2] = {RAPFI_RSP_TURN, turn_code()};
+  (void)usb_cdc_write(b, sizeof(b));
+}
+
+static void reply_move(const gomoku_result_t *r)
+{
+  uint8_t b[RAPFI_MOVE_LEN];
+  b[0] = RAPFI_RSP_MOVE;
+  b[1] = (uint8_t)r->x;
+  b[2] = (uint8_t)r->y;
+  b[3] = (uint8_t)r->depth;
+  put_u32(&b[4], (uint32_t)r->score);
+  put_u32(&b[8], r->nodes);
+  put_u32(&b[12], r->time_ms);
+  b[16] = status_code();
+  b[17] = turn_code();
+  (void)usb_cdc_write(b, sizeof(b));
 }
 
 /**
- * @brief 处理一条文本命令。
- * @param line 命令行（以 '\0' 结尾）。
+ * @brief 处理一帧命令。
+ * @param f 4 字节命令帧。
  * @return 无。
  */
-static void handle_line(const char *line)
+static void handle_frame(const uint8_t *f)
 {
-  char cmd[16];
-  static char text[BOARD_TEXT_SZ];
-  int x;
-  int y;
+  switch (f[0]) {
+    case RAPFI_CMD_NEW:
+      gomoku_new();
+      s_turn = GOMOKU_BLACK;
+      reply_ok();
+      break;
 
-  if (sscanf(line, "%15s", cmd) != 1) {
-    return;
-  }
+    case RAPFI_CMD_PLAY:
+      if (gomoku_place((int)f[1], (int)f[2], s_turn) == 0) {
+        s_turn = 3 - s_turn;
+        reply_ok();
+      } else {
+        reply_err();
+      }
+      break;
 
-  if (ci_equal(cmd, "NEW") != 0) {
-    gomoku_new();
-    s_turn = GOMOKU_BLACK;
-    usb_cdc_write_str("OK\r\n");
-  } else if (ci_equal(cmd, "BOARD") != 0) {
-    (void)gomoku_to_text(text, (int)sizeof(text));
-    (void)usb_cdc_write_str(text);
-  } else if (ci_equal(cmd, "PLAY") != 0) {
-    if ((sscanf(line, "%*s %d %d", &x, &y) == 2) &&
-        (gomoku_place(x, y, s_turn) == 0)) {
-      s_turn = 3 - s_turn;
-      usb_cdc_write_str("OK\r\n");
-    } else {
-      usb_cdc_write_str("ERR\r\n");
+    case RAPFI_CMD_GO: {
+      gomoku_result_t r;
+      int depth = (f[1] == 0U) ? 6 : (int)f[1];
+      uint32_t ms = (uint32_t)f[2] | ((uint32_t)f[3] << 8);
+      if (gomoku_think(s_turn, depth, ms, &r) == 0) {
+        s_turn = 3 - s_turn;
+        reply_move(&r);
+      } else {
+        reply_err();
+      }
+      break;
     }
-  } else if (ci_equal(cmd, "GO") != 0) {
-    gomoku_result_t r;
-    int depth = DEFAULT_DEPTH;
-    unsigned int time_ms = DEFAULT_TIME;
-    (void)sscanf(line, "%*s %d %u", &depth, &time_ms);
-    if (gomoku_think(s_turn, depth, time_ms, &r) == 0) {
-      s_turn = 3 - s_turn;
-      usb_cdc_printf("MOVE %d %d %d %d %lu %lu\r\n", r.x, r.y, r.score,
-                     r.depth, (unsigned long)r.nodes, (unsigned long)r.time_ms);
-    } else {
-      usb_cdc_write_str("ERR\r\n");
+
+    case RAPFI_CMD_UNDO:
+      if (gomoku_undo() == 0) {
+        s_turn = 3 - s_turn;
+        reply_ok();
+      } else {
+        reply_err();
+      }
+      break;
+
+    case RAPFI_CMD_STATUS:
+      reply_status();
+      break;
+
+    case RAPFI_CMD_TURN:
+      reply_turn();
+      break;
+
+    case RAPFI_CMD_PING: {
+      uint8_t b = RAPFI_RSP_READY;
+      (void)usb_cdc_write(&b, 1U);
+      break;
     }
-  } else if (ci_equal(cmd, "UNDO") != 0) {
-    if (gomoku_undo() == 0) {
-      s_turn = 3 - s_turn;
-      usb_cdc_write_str("OK\r\n");
-    } else {
-      usb_cdc_write_str("ERR\r\n");
-    }
-  } else if (ci_equal(cmd, "TURN") != 0) {
-    usb_cdc_printf("TURN %c\r\n", (s_turn == GOMOKU_BLACK) ? 'B' : 'W');
-  } else if (ci_equal(cmd, "STATUS") != 0) {
-    int st = gomoku_status();
-    if (st == GOMOKU_EMPTY) {
-      usb_cdc_write_str("STATUS PLAYING\r\n");
-    } else if (st == GOMOKU_DRAW) {
-      usb_cdc_write_str("STATUS DRAW\r\n");
-    } else {
-      usb_cdc_printf("STATUS WIN %c\r\n",
-                     (st == GOMOKU_BLACK) ? 'B' : 'W');
-    }
-  } else {
-    usb_cdc_write_str("ERR\r\n");
+
+    default:
+      reply_err();
+      break;
   }
 }
 
 void app_init(void)
 {
+  uint8_t ready = RAPFI_RSP_READY;
+
   gomoku_init();
   gomoku_new();
   s_turn = GOMOKU_BLACK;
-  s_line_len = 0U;
-  usb_cdc_write_str("\r\nRapfi-Embedded ready.\r\n> ");
+  s_frame_len = 0U;
+  (void)usb_cdc_write(&ready, 1U);
 }
 
 void app_poll(void)
 {
-  uint8_t byte;
+  /* 半帧长时间未补全 -> 丢弃，重新同步。 */
+  if ((s_frame_len != 0U) &&
+      ((HAL_GetTick() - s_frame_tick) > FRAME_IDLE_TIMEOUT_MS)) {
+    s_frame_len = 0U;
+  }
 
-  while (usb_cdc_try_read_byte(&byte) != 0) {
-    if (byte == (uint8_t)'\n') {
-      s_line[s_line_len] = '\0';
-      handle_line(s_line);
-      s_line_len = 0U;
-    } else if ((byte != (uint8_t)'\r') && (byte != 0U)) {
-      if (s_line_len < (LINE_MAX - 1U)) {
-        s_line[s_line_len] = (char)byte;
-        ++s_line_len;
-      } else {
-        s_line_len = 0U; /* 行过长丢弃 */
-      }
+  for (;;) {
+    uint32_t got = usb_cdc_read(&s_frame[s_frame_len],
+                                RAPFI_CMD_LEN - s_frame_len);
+    if (got == 0U) {
+      break;
+    }
+    s_frame_tick = HAL_GetTick();
+    s_frame_len += got;
+    if (s_frame_len == RAPFI_CMD_LEN) {
+      handle_frame(s_frame);
+      s_frame_len = 0U;
     }
   }
 }

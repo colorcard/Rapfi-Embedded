@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// 通过 POSIX termios 访问 /dev/cu.usbmodem* 的串口封装。
+/// 通过 POSIX termios 访问 /dev/cu.usbmodem* 的串口封装（原始字节流）。
 final class SerialPort {
     private var fd: Int32 = -1
     private var running = false
@@ -9,8 +9,8 @@ final class SerialPort {
     private var buffer = Data()
     private let lock = NSLock()
 
-    /// 收到一行（已去除 \\r 与提示符 "> "），在主线程回调。
-    var onLine: ((String) -> Void)?
+    /// 收到一批原始字节（在主线程回调）。
+    var onBytes: ((Data) -> Void)?
 
     deinit { close() }
 
@@ -24,21 +24,19 @@ final class SerialPort {
             .sorted()
     }
 
-    /// 探测某端口是否是 STM32 引擎（发 TURN 看是否回 TURN）。
+    /// 探测某端口是否是 Rapfi 引擎（发 PING，看是否回 READY 0x85）。
     static func probe(_ path: String) -> Bool {
         let p = SerialPort()
         guard p.open(path) else { return false }
-        p.writeLine("TURN")
+        p.write(Data([0x07, 0x00, 0x00, 0x00]))
         let deadline = Date().addingTimeInterval(0.5)
-        var seen = ""
+        var found = false
         while Date() < deadline {
-            if let ln = p.pollLine(timeoutMs: 80) {
-                seen += ln
-                if seen.contains("TURN") { break }
-            }
+            let chunk = p.readBytes(timeoutMs: 60)
+            if chunk.contains(0x85) { found = true; break }
         }
         p.close()
-        return seen.contains("TURN")
+        return found
     }
 
     func open(_ path: String) -> Bool {
@@ -61,9 +59,8 @@ final class SerialPort {
         lock.lock(); buffer.removeAll(); lock.unlock()
     }
 
-    func writeLine(_ s: String) {
+    func write(_ data: Data) {
         guard fd >= 0 else { return }
-        let data = Data((s + "\n").utf8)
         data.withUnsafeBytes { raw in
             if let base = raw.baseAddress {
                 _ = Darwin.write(fd, base, raw.count)
@@ -71,39 +68,18 @@ final class SerialPort {
         }
     }
 
-    /// 读取并切出完整行（阻塞至多 timeoutMs）。给探测用。
-    private func pollLine(timeoutMs: Int) -> String? {
+    /// 同步读取一段（给探测用）。
+    private func readBytes(timeoutMs: Int) -> Data {
         let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
         while Date() < deadline {
-            if let line = takeLine() { return line }
-            var b = [UInt8](repeating: 0, count: 256)
+            var b = [UInt8](repeating: 0, count: 64)
             let n = b.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
-            if n > 0 {
-                lock.lock(); buffer.append(contentsOf: b[0..<n]); lock.unlock()
-            } else {
-                usleep(5000)
-            }
+            if n > 0 { return Data(b[0..<n]) }
+            usleep(4000)
         }
-        return takeLine()
+        return Data()
     }
 
-    private func takeLine() -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let idx = buffer.firstIndex(of: 0x0A) else { return nil }
-        let slice = buffer[buffer.startIndex..<idx]
-        buffer.removeSubrange(buffer.startIndex...idx)
-        var s = String(data: Data(slice), encoding: .utf8) ?? ""
-        s = s.replacingOccurrences(of: "\r", with: "")
-        s = s.trimmingCharacters(in: .whitespaces)
-        if s.hasPrefix(">") {
-            s.removeFirst()
-            s = s.trimmingCharacters(in: .whitespaces)
-        }
-        return s.isEmpty ? nil : s
-    }
-
-    /// 启动后台读线程。
     func startReading() {
         running = true
         let t = Thread { [weak self] in self?.readLoop() }
@@ -113,12 +89,12 @@ final class SerialPort {
     }
 
     private func readLoop() {
-        var b = [UInt8](repeating: 0, count: 1024)
+        var b = [UInt8](repeating: 0, count: 512)
         while running {
             let n = b.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
             if n > 0 {
                 lock.lock(); buffer.append(contentsOf: b[0..<n]); lock.unlock()
-                drainLines()
+                drain()
             } else if n < 0 {
                 if errno == EAGAIN || errno == EWOULDBLOCK { usleep(2000); continue }
                 break
@@ -128,9 +104,12 @@ final class SerialPort {
         }
     }
 
-    private func drainLines() {
-        while let line = takeLine() {
-            DispatchQueue.main.async { [weak self] in self?.onLine?(line) }
-        }
+    private func drain() {
+        lock.lock()
+        let out = buffer
+        buffer.removeAll()
+        lock.unlock()
+        guard !out.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in self?.onBytes?(out) }
     }
 }

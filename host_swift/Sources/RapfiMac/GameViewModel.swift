@@ -4,7 +4,6 @@ enum Side: Int {
     case black = 1
     case white = 2
     var opposite: Side { self == .black ? .white : .black }
-    var name: String { self == .black ? "黑" : "白" }
 }
 
 enum GameStatus: Equatable {
@@ -26,13 +25,36 @@ struct EngineInfo: Equatable {
     var ms = 0
 }
 
-/// 对局状态 + MCU 文本协议。
+/// 对局状态 + 定长二进制协议（见固件 project/code/rapfi_protocol.h）。
 @MainActor
 final class GameViewModel: ObservableObject {
     static let n = 15
 
+    // 命令 / 应答 / 长度表
+    private enum Cmd {
+        static let newGame: UInt8 = 0x01
+        static let play: UInt8 = 0x02
+        static let go: UInt8 = 0x03
+        static let undo: UInt8 = 0x04
+        static let status: UInt8 = 0x05
+        static let turn: UInt8 = 0x06
+        static let ping: UInt8 = 0x07
+    }
+    private enum Rsp {
+        static let ok: UInt8 = 0x80
+        static let err: UInt8 = 0x81
+        static let move: UInt8 = 0x82
+        static let status: UInt8 = 0x83
+        static let turn: UInt8 = 0x84
+        static let ready: UInt8 = 0x85
+    }
+    private static let rspLen: [UInt8: Int] =
+        [0x80: 3, 0x81: 1, 0x82: 18, 0x83: 3, 0x84: 2, 0x85: 1]
+
+    private enum Pending { case none, newGame, play, go, undo }
+
     @Published var board: [[Int]] = Array(
-        repeating: Array(repeating: 0, count: GameViewModel.n), count: GameViewModel.n)
+        repeating: Array(repeating: 0, count: n), count: n)
     @Published var turn: Side = .black
     @Published var human: Side = .black
     @Published var depth = 6
@@ -48,12 +70,13 @@ final class GameViewModel: ObservableObject {
     @Published var errorText: String?
 
     var thinking: Bool { pending == .go }
+    var engineSide: Side { human.opposite }
 
-    private enum Pending { case none, play, go }
     private var pending: Pending = .none
     private var pendingMove: (Int, Int)?
     private var port: SerialPort?
     private var monitor: Timer?
+    private var rx = Data()
 
     // MARK: - 连接
 
@@ -62,34 +85,26 @@ final class GameViewModel: ObservableObject {
         connecting = true
         errorText = nil
 
-        // 优先按 USB VID:PID 精确识别。
         if let dev = USBMatcher.find() {
             attach(path: dev.path, product: dev.product, serial: dev.serial)
             return
         }
-
-        // 回退：逐个串口发 TURN 试探（非本机 USB 设备时）。
         let cands = SerialPort.candidates()
         DispatchQueue.global().async {
             var found: String?
-            for path in cands where SerialPort.probe(path) {
-                found = path
-                break
-            }
+            for path in cands where SerialPort.probe(path) { found = path; break }
             DispatchQueue.main.async {
                 if let path = found {
                     self.attach(path: path)
                 } else {
                     self.connecting = false
-                    self.errorText = cands.isEmpty
-                        ? "未发现 USB 串口设备"
-                        : "未找到 STM32 引擎（VID 0x0483:0x5250）"
+                    self.errorText = cands.isEmpty ? "未发现 USB 串口设备"
+                        : "未找到 Rapfi 引擎（VID 0x0483:0x5250）"
                 }
             }
         }
     }
 
-    /// 定时检查热插拔：设备出现自动连接，拔出自动断开。
     func startMonitoring() {
         guard monitor == nil else { return }
         monitor = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
@@ -123,42 +138,38 @@ final class GameViewModel: ObservableObject {
         portPath = path
         deviceName = product
         serial = sn
-        p.onLine = { [weak self] line in
-            Task { @MainActor in self?.handle(line) }
+        rx.removeAll()
+        p.onBytes = { [weak self] data in
+            Task { @MainActor in self?.ingest(data) }
         }
         p.startReading()
         connected = true
         connecting = false
         errorText = nil
-        send("NEW")
-        resetLocal()
-        send("STATUS")
+        newGame()
     }
 
-    private func send(_ cmd: String) { port?.writeLine(cmd) }
+    // MARK: - 发送
+
+    private func sendFrame(_ op: UInt8, _ a: UInt8 = 0, _ b: UInt8 = 0, _ c: UInt8 = 0) {
+        port?.write(Data([op, a, b, c]))
+    }
 
     // MARK: - 操作
 
     func newGame(human newHuman: Side? = nil) {
         if let h = newHuman { human = h }
-        send("NEW")
-        resetLocal()
-        if turn == engineSide { askEngine() }
-    }
-
-    func swapSides() { newGame(human: human.opposite) }
-
-    private func resetLocal() {
         board = Array(repeating: Array(repeating: 0, count: Self.n), count: Self.n)
         turn = .black
         status = .playing
         info = nil
         lastMove = nil
-        pending = .none
         pendingMove = nil
+        pending = .newGame
+        sendFrame(Cmd.newGame)
     }
 
-    var engineSide: Side { human.opposite }
+    func swapSides() { newGame(human: human.opposite) }
 
     func click(x: Int, y: Int) {
         guard status == .playing, pending == .none, turn == human else { return }
@@ -166,81 +177,98 @@ final class GameViewModel: ObservableObject {
         guard board[y][x] == 0 else { return }
         pending = .play
         pendingMove = (x, y)
-        send("PLAY \(x) \(y)")
+        sendFrame(Cmd.play, UInt8(x), UInt8(y))
     }
 
     func undo() {
         guard pending == .none else { return }
-        send("UNDO")
-        send("UNDO")
-        send("STATUS")
+        pending = .undo
+        pendingMove = nil
         board = Array(repeating: Array(repeating: 0, count: Self.n), count: Self.n)
         lastMove = nil
         info = nil
         status = .playing
         turn = human
-        pendingMove = nil
+        sendFrame(Cmd.undo)
+        sendFrame(Cmd.undo)
     }
 
-    func adjustDepth(_ delta: Int) {
-        depth = max(1, min(12, depth + delta))
-    }
+    func adjustDepth(_ delta: Int) { depth = max(1, min(12, depth + delta)) }
 
     private func askEngine() {
         pending = .go
-        send("GO \(depth) \(thinkMs)")
+        sendFrame(Cmd.go, UInt8(depth & 0xFF),
+                  UInt8(thinkMs & 0xFF), UInt8((thinkMs >> 8) & 0xFF))
     }
 
-    // MARK: - 协议解析
+    // MARK: - 收帧
 
-    private func handle(_ line: String) {
-        if line == "OK" {
-            if pending == .play {
-                pending = .none
-                if let (x, y) = pendingMove {
-                    if board[y][x] == 0 {
-                        board[y][x] = human.rawValue
-                        lastMove = Move(x: x, y: y)
-                    }
-                    pendingMove = nil
-                }
-                turn = turn.opposite
-                send("STATUS")
+    private func ingest(_ data: Data) {
+        rx.append(data)
+        while let first = rx.first {
+            guard let n = Self.rspLen[first] else {
+                rx.removeFirst()   // 未知类型，丢一字节重新同步
+                continue
             }
-            return
+            if rx.count < n { break }
+            let frame = [UInt8](rx.prefix(n))
+            rx.removeFirst(n)
+            handleFrame(frame)
         }
-        if line == "ERR" {
-            pending = .none
-            pendingMove = nil
-            return
+    }
+
+    private func u32(_ f: [UInt8], _ o: Int) -> UInt32 {
+        UInt32(f[o]) | (UInt32(f[o + 1]) << 8)
+            | (UInt32(f[o + 2]) << 16) | (UInt32(f[o + 3]) << 24)
+    }
+
+    private func applyState(_ s: UInt8, _ t: UInt8) {
+        turn = (t == 0) ? .black : .white
+        switch s {
+        case 1: status = (human == .black) ? .humanWin : .engineWin
+        case 2: status = (human == .white) ? .humanWin : .engineWin
+        case 3: status = .draw
+        default: status = .playing
         }
-        if line.hasPrefix("MOVE ") {
-            let t = line.split(separator: " ").compactMap { Int($0) }
-            if t.count == 6 {
-                let (x, y, score, dep, nodes, ms) = (t[0], t[1], t[2], t[3], t[4], t[5])
-                if (0..<Self.n).contains(x), (0..<Self.n).contains(y), board[y][x] == 0 {
-                    board[y][x] = engineSide.rawValue
+    }
+
+    private func handleFrame(_ f: [UInt8]) {
+        switch f[0] {
+        case Rsp.ok:
+            if pending == .play || pending == .undo {
+                if pending == .play, let (x, y) = pendingMove, board[y][x] == 0 {
+                    board[y][x] = human.rawValue
                     lastMove = Move(x: x, y: y)
                 }
-                info = EngineInfo(depth: dep, score: score, nodes: nodes, ms: ms)
+                pendingMove = nil
+                pending = .none
+                applyState(f[1], f[2])
+                if status == .playing, turn == engineSide { askEngine() }
+            } else if pending == .newGame {
+                pending = .none
+                applyState(f[1], f[2])
+                if turn == engineSide { askEngine() }
             }
-            turn = human
+        case Rsp.err:
             pending = .none
-            send("STATUS")
-            return
-        }
-        if line.hasPrefix("STATUS ") {
-            let st = String(line.dropFirst(7)).trimmingCharacters(in: .whitespaces)
-            if st.hasPrefix("WIN") {
-                let win: Side = st.contains("B") ? .black : .white
-                status = (win == human) ? .humanWin : .engineWin
-            } else if st == "DRAW" {
-                status = .draw
-            } else if st == "PLAYING" {
-                if pending == .none, status == .playing, turn == engineSide {
-                    askEngine()
-                }
+            pendingMove = nil
+        case Rsp.move:
+            let x = Int(f[1]), y = Int(f[2]), dep = Int(f[3])
+            let score = Int(Int32(bitPattern: u32(f, 4)))
+            let nodes = Int(u32(f, 8)), ms = Int(u32(f, 12))
+            if (0..<Self.n).contains(x), (0..<Self.n).contains(y), board[y][x] == 0 {
+                board[y][x] = engineSide.rawValue
+                lastMove = Move(x: x, y: y)
             }
+            info = EngineInfo(depth: dep, score: score, nodes: nodes, ms: ms)
+            pending = .none
+            applyState(f[16], f[17])
+        case Rsp.status:
+            applyState(f[1], f[2])
+        case Rsp.turn:
+            turn = (f[1] == 0) ? .black : .white
+        default:
+            break   // Rsp.ready
         }
     }
 }
