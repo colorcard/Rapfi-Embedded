@@ -106,6 +106,26 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
 int gomoku_think(int side, int max_depth, uint32_t time_limit_ms,
                  gomoku_result_t *res);
 
+/** @brief 停止钩子：返回非 0 表示应尽快中断搜索（如 USB 收到新命令）。 */
+typedef int (*gomoku_stop_fn)(void);
+
+/**
+ * @brief 设置全局停止钩子（后台思索时用于被新命令即时打断）。
+ * @param fn 钩子函数，NULL 表示不检查。
+ * @return 无。
+ */
+void gomoku_set_stop_hook(gomoku_stop_fn fn);
+
+/**
+ * @brief 后台思索：在当前局面（side 行棋）做一段有界搜索以预热置换表。
+ * @param side 轮到的一方。
+ * @param slice_ms 本次思索时间上限（毫秒）。
+ * @param predict 非 0 时，先算 side 的最佳着法并对其做对方应手搜索（更强的预热）。
+ * @return 0 正常，-1 无法思索（局面已结束等）。
+ * @note 不改变棋盘/历史，只写置换表。
+ */
+int gomoku_ponder(int side, uint32_t slice_ms, int predict);
+
 /**
  * @brief 序列化为文本棋盘（供 USB 输出）。
  * @param buf 输出缓冲。

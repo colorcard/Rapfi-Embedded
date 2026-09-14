@@ -104,6 +104,7 @@ static uint32_t s_nodes;
 static uint32_t s_deadline;
 static int s_time_limited;
 static int s_abort;
+static gomoku_stop_fn s_stop_hook;
 
 static int32_t pattern_value(int len, int open_l, int open_r);
 static void pat_refresh_all(void);
@@ -904,10 +905,16 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
   uint32_t key;
 
   ++s_nodes;
-  if ((s_time_limited != 0) && ((s_nodes & 0x3FFU) == 0U) &&
-      ((int32_t)(DWT->CYCCNT - s_deadline) >= 0)) {
-    s_abort = 1;
-    return 0;
+  if ((s_nodes & 0x3FFU) == 0U) {
+    if ((s_stop_hook != NULL) && (s_stop_hook() != 0)) {
+      s_abort = 1;
+      return 0;
+    }
+    if ((s_time_limited != 0) &&
+        ((int32_t)(DWT->CYCCNT - s_deadline) >= 0)) {
+      s_abort = 1;
+      return 0;
+    }
   }
 
   key = s_hash;
@@ -1027,6 +1034,15 @@ static void vcf_gen(int vd, int side)
  */
 static int vcf(int side, int depth, int *first)
 {
+  /* 时限/中断检查：VCF 可能很深，必须可被打断。 */
+  if ((s_stop_hook != NULL) && (s_stop_hook() != 0)) {
+    return 0;
+  }
+  if ((s_time_limited != 0) &&
+      ((int32_t)(DWT->CYCCNT - s_deadline) >= 0)) {
+    return 0;
+  }
+
   int opp = 3 - side;
   int i;
   int n;
@@ -1308,6 +1324,40 @@ int gomoku_think(int side, int max_depth, uint32_t time_limit_ms,
   }
   if (res != NULL) {
     *res = r;
+  }
+  return 0;
+}
+
+void gomoku_set_stop_hook(gomoku_stop_fn fn)
+{
+  s_stop_hook = fn;
+}
+
+int gomoku_ponder(int side, uint32_t slice_ms, int predict)
+{
+  gomoku_result_t r;
+
+  if ((side != GOMOKU_BLACK) && (side != GOMOKU_WHITE)) {
+    return -1;
+  }
+  if (gomoku_status() != GOMOKU_EMPTY) {
+    return -1;
+  }
+  if (gomoku_search(side, MAX_PLY, slice_ms, &r) != 0) {
+    return -1;
+  }
+  if ((predict == 0) || (r.depth == 0)) {
+    return 0;
+  }
+  /* 预测 side 的最佳着法，并对“对方应手”做一次搜索预热置换表。
+     仅 make/unmake，不改变历史与胜负状态。 */
+  {
+    int idx = r.y * GOMOKU_N + r.x;
+    if ((idx >= 0) && (idx < GOMOKU_CELLS) && (s_cell[idx] == GOMOKU_EMPTY)) {
+      make_move(idx, side);
+      (void)gomoku_search(3 - side, MAX_PLY, slice_ms, NULL);
+      unmake_move(idx, side);
+    }
   }
   return 0;
 }

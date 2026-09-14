@@ -13,6 +13,16 @@ static uint32_t s_frame_tick;
 #define FRAME_IDLE_TIMEOUT_MS 50U
 /** @brief 当前轮到的一方。 */
 static int s_turn;
+/** @brief 引擎刚走完、轮到对手时置 1，可后台思索。 */
+static volatile int s_can_ponder;
+/** @brief 单次后台思索时间片（ms）。 */
+#define PONDER_SLICE_MS 40U
+
+/** @brief 停止钩子：USB 一有数据就中断思索，保证响应及时。 */
+static int app_stop_hook(void)
+{
+  return (usb_cdc_rx_available() != 0U) ? 1 : 0;
+}
 
 /**
  * @brief 把对局胜负映射为协议状态码。
@@ -95,12 +105,14 @@ static void handle_frame(const uint8_t *f)
     case RAPFI_CMD_NEW:
       gomoku_new();
       s_turn = GOMOKU_BLACK;
+      s_can_ponder = 0;
       reply_ok();
       break;
 
     case RAPFI_CMD_PLAY:
       if (gomoku_place((int)f[1], (int)f[2], s_turn) == 0) {
         s_turn = 3 - s_turn;
+        s_can_ponder = 0;
         reply_ok();
       } else {
         reply_err();
@@ -113,6 +125,7 @@ static void handle_frame(const uint8_t *f)
       uint32_t ms = (uint32_t)f[2] | ((uint32_t)f[3] << 8);
       if (gomoku_think(s_turn, depth, ms, &r) == 0) {
         s_turn = 3 - s_turn;
+        s_can_ponder = 1; /* 轮到对手，可后台思索 */
         reply_move(&r);
       } else {
         reply_err();
@@ -123,6 +136,7 @@ static void handle_frame(const uint8_t *f)
     case RAPFI_CMD_UNDO:
       if (gomoku_undo() == 0) {
         s_turn = 3 - s_turn;
+        s_can_ponder = 0;
         reply_ok();
       } else {
         reply_err();
@@ -155,7 +169,9 @@ void app_init(void)
 
   gomoku_init();
   gomoku_new();
+  gomoku_set_stop_hook(app_stop_hook);
   s_turn = GOMOKU_BLACK;
+  s_can_ponder = 0;
   s_frame_len = 0U;
   (void)usb_cdc_write(&ready, 1U);
 }
@@ -179,6 +195,15 @@ void app_poll(void)
     if (s_frame_len == RAPFI_CMD_LEN) {
       handle_frame(s_frame);
       s_frame_len = 0U;
+    }
+  }
+
+  /* 空闲且轮到对手：后台思索预热置换表；USB 一有数据由钩子立即中断。 */
+  if (s_can_ponder != 0) {
+    if (gomoku_status() != GOMOKU_EMPTY) {
+      s_can_ponder = 0;
+    } else if (usb_cdc_rx_available() == 0U) {
+      (void)gomoku_ponder(s_turn, PONDER_SLICE_MS, 1);
     }
   }
 }
