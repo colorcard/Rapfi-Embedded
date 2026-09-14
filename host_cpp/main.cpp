@@ -291,17 +291,34 @@ static const char* ColName(int x) {
   return names[x];
 }
 
-// 棋盘：每个交叉点 3 格宽，四周坐标。
+// 交叉点字符：按是否处于上下/左右边界选择连接线。
+static const char* GridChar(int x, int y) {
+  bool top = (y == kN - 1);
+  bool bot = (y == 0);
+  bool left = (x == 0);
+  bool right = (x == kN - 1);
+  if (top && left) return "┌";
+  if (top && right) return "┐";
+  if (bot && left) return "└";
+  if (bot && right) return "┘";
+  if (top) return "┬";
+  if (bot) return "┴";
+  if (left) return "├";
+  if (right) return "┤";
+  return "┼";
+}
+
+// 棋盘：制表符网格，石子在交叉点；每交叉点占 3 列（字符 + 两格横线）。
 static Element BoardElement(const Game& g, int cx, int cy) {
   Elements rows;
 
   auto coords = [&] {
     Elements r;
-    r.push_back(text("   "));
+    r.push_back(text("   ") | color(kWood));
     for (int x = 0; x < kN; ++x) {
       r.push_back(text(std::string(" ") + ColName(x) + " ") | color(kWood));
     }
-    r.push_back(text("   "));
+    r.push_back(text("  ") | color(kWood));
     return hbox(std::move(r));
   };
 
@@ -313,25 +330,29 @@ static Element BoardElement(const Game& g, int cx, int cy) {
     r.push_back(text(lbl) | color(kWood));
     for (int x = 0; x < kN; ++x) {
       int v = g.board[y][x];
-      Element e;
-      if (v == kBlack) {
-        e = text(" ● ") | color(kStoneB) | bold;
-      } else if (v == kWhite) {
-        e = text(" ○ ") | color(kStoneW) | bold;
-      } else {
-        e = text(" · ") | color(Color::RGB(110, 92, 66));
+      const bool cur = (x == cx && y == cy);
+      const bool last = (g.has_last && g.last_x == x && g.last_y == y);
+
+      std::string ch = (v == kBlack) ? "●" : (v == kWhite) ? "○" : GridChar(x, y);
+      const char* link = (x < kN - 1) ? "──" : "  ";
+
+      Color ch_color = (v == kBlack)   ? kStoneB
+                       : (v == kWhite) ? kStoneW
+                                       : kWood;
+      if (last) ch_color = kLast;
+
+      Element ce = text(ch) | color(ch_color) | bold;
+      Element de = text(link) | color(kWood);
+      if (cur) {
+        ce = ce | bgcolor(kCursor);
+        de = de | bgcolor(kCursor);
       }
-      if (g.has_last && g.last_x == x && g.last_y == y) {
-        e = e | color(kLast) | bold;
-      }
-      if (x == cx && y == cy) {
-        e = e | bgcolor(kCursor);
-      }
-      r.push_back(e);
+      r.push_back(ce);
+      r.push_back(de);
     }
-    char rlbl[8];
-    std::snprintf(rlbl, sizeof(rlbl), " %2d", y + 1);
-    r.push_back(text(rlbl) | color(kWood));
+    char rl[8];
+    std::snprintf(rl, sizeof(rl), " %2d", y + 1);
+    r.push_back(text(rl) | color(kWood));
     rows.push_back(hbox(std::move(r)));
   }
   rows.push_back(coords());
