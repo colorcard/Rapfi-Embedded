@@ -52,6 +52,10 @@ static uint8_t s_winner;
 static uint32_t s_zob[2][GOMOKU_CELLS];
 static uint32_t s_hash;
 
+/* SWAR 位棋盘：每方 4 个视图（行/列/↘/↙），每条线一个 lane（bit=x）。
+   连五判定用 m&(m>>1)&(m>>2)&(m>>3)&(m>>4)，寄存器内并行。 */
+static uint32_t s_bb[2][4][29];
+
 /* ------------------------------ 窗口索引 ------------------------------ */
 
 static uint16_t s_win[GWIN_MAX][5];
@@ -101,6 +105,8 @@ static int s_abort;
 
 static int32_t pattern_value(int len, int open_l, int open_r);
 static void pat_refresh_all(void);
+static void bb_set(int idx, int side);
+static void bb_clear(int idx, int side);
 
 /** @brief 简易 xorshift。 */
 static uint32_t xorshift(uint32_t *state)
@@ -219,6 +225,7 @@ void gomoku_new(void)
   memset(s_cell, GOMOKU_EMPTY, sizeof(s_cell));
   memset(s_near, 0, sizeof(s_near));
   memset(s_win_cnt, 0, sizeof(s_win_cnt));
+  memset(s_bb, 0, sizeof(s_bb));
   s_four_win[0] = 0;
   s_four_win[1] = 0;
   s_four_win[2] = 0;
@@ -497,6 +504,7 @@ static void make_move(int idx, int side)
   uint8_t i;
 
   s_cell[idx] = (uint8_t)side;
+  bb_set(idx, side);
   for (i = 0U; i < n; ++i) {
     uint8_t *pc = &s_win_cnt[side][s_cell_win[idx][i]];
     if (*pc == 4U) {
@@ -535,6 +543,7 @@ static void unmake_move(int idx, int side)
     }
   }
   s_cell[idx] = GOMOKU_EMPTY;
+  bb_clear(idx, side);
   near_update(idx, -1);
   s_hash ^= s_zob[side - 1][idx];
   pat_update(idx);
@@ -572,31 +581,46 @@ int gomoku_last_move(int *x, int *y)
  * @brief 判断在 idx 落 side 后是否形成五连（idx 视为已落）。
  * @return 1 成五，0 否。
  */
-static int makes_five(int idx, int side)
+/** @brief 置位/清位：把 idx 处 side 子登记到 4 个线位棋盘视图。 */
+static void bb_set(int idx, int side)
 {
-  static const int dx[4] = {1, 0, 1, 1};
-  static const int dy[4] = {0, 1, 1, -1};
   int x = idx % GOMOKU_N;
   int y = idx / GOMOKU_N;
-  int dir;
+  uint32_t bit = 1U << x;
+  s_bb[side - 1][0][y] |= bit;
+  s_bb[side - 1][1][x] |= (1U << y);
+  s_bb[side - 1][2][x - y + 14] |= bit;
+  s_bb[side - 1][3][x + y] |= bit;
+}
 
-  for (dir = 0; dir < 4; ++dir) {
-    int count = 1;
-    int sgn;
-    for (sgn = -1; sgn <= 1; sgn += 2) {
-      int cx = x + dx[dir] * sgn;
-      int cy = y + dy[dir] * sgn;
-      while ((cx >= 0) && (cx < GOMOKU_N) && (cy >= 0) && (cy < GOMOKU_N) &&
-             (s_cell[cy * GOMOKU_N + cx] == (uint8_t)side)) {
-        ++count;
-        cx += dx[dir] * sgn;
-        cy += dy[dir] * sgn;
-      }
-    }
-    if (count >= 5) {
-      return 1;
-    }
-  }
+static void bb_clear(int idx, int side)
+{
+  int x = idx % GOMOKU_N;
+  int y = idx / GOMOKU_N;
+  uint32_t bit = 1U << x;
+  s_bb[side - 1][0][y] &= ~bit;
+  s_bb[side - 1][1][x] &= ~(1U << y);
+  s_bb[side - 1][2][x - y + 14] &= ~bit;
+  s_bb[side - 1][3][x + y] &= ~bit;
+}
+
+/**
+ * @brief 判断在 idx 落 side 后是否形成五连（idx 视为已落）。
+ *        用 4 条经过该点的线位棋盘，SWAR 检测连续 5 位。
+ */
+static int makes_five(int idx, int side)
+{
+  int x = idx % GOMOKU_N;
+  int y = idx / GOMOKU_N;
+  uint32_t m;
+  m = s_bb[side - 1][0][y];
+  if ((m & (m >> 1) & (m >> 2) & (m >> 3) & (m >> 4)) != 0U) { return 1; }
+  m = s_bb[side - 1][1][x];
+  if ((m & (m >> 1) & (m >> 2) & (m >> 3) & (m >> 4)) != 0U) { return 1; }
+  m = s_bb[side - 1][2][x - y + 14];
+  if ((m & (m >> 1) & (m >> 2) & (m >> 3) & (m >> 4)) != 0U) { return 1; }
+  m = s_bb[side - 1][3][x + y];
+  if ((m & (m >> 1) & (m >> 2) & (m >> 3) & (m >> 4)) != 0U) { return 1; }
   return 0;
 }
 
@@ -604,9 +628,9 @@ static int makes_five(int idx, int side)
 static int would_make_five(int idx, int side)
 {
   int r;
-  s_cell[idx] = (uint8_t)side;
+  bb_set(idx, side);
   r = makes_five(idx, side);
-  s_cell[idx] = GOMOKU_EMPTY;
+  bb_clear(idx, side);
   return r;
 }
 
