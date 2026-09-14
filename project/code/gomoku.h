@@ -127,6 +127,14 @@ void gomoku_set_stop_hook(gomoku_stop_fn fn);
 int gomoku_ponder(int side, uint32_t slice_ms, int predict);
 
 /**
+ * @brief 取上一次搜索的 PV（最佳线路），元素为格号(x + y*15)。
+ * @param out 输出缓冲（至少 16 字节）。
+ * @param len 输出长度。
+ * @return 无。
+ */
+void gomoku_get_pv(uint8_t *out, int *len);
+
+/**
  * @brief 序列化为文本棋盘（供 USB 输出）。
  * @param buf 输出缓冲。
  * @param cap 缓冲大小。

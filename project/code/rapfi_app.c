@@ -79,6 +79,23 @@ static void reply_turn(void)
   (void)usb_cdc_write(b, sizeof(b));
 }
 
+static void reply_pv(void)
+{
+  uint8_t buf[2U + RAPFI_PV_MAX];
+  int len = 0;
+
+  gomoku_get_pv(&buf[2], &len);
+  if (len <= 0) {
+    return;
+  }
+  if (len > (int)RAPFI_PV_MAX) {
+    len = (int)RAPFI_PV_MAX;
+  }
+  buf[0] = RAPFI_RSP_PV;
+  buf[1] = (uint8_t)len;
+  (void)usb_cdc_write(buf, (uint32_t)len + 2U);
+}
+
 static void reply_move(const gomoku_result_t *r)
 {
   uint8_t b[RAPFI_MOVE_LEN];
@@ -127,6 +144,7 @@ static void handle_frame(const uint8_t *f)
         s_turn = 3 - s_turn;
         s_can_ponder = 1; /* 轮到对手，可后台思索 */
         reply_move(&r);
+        reply_pv();
       } else {
         reply_err();
       }

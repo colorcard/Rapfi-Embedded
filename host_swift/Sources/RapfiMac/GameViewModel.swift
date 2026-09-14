@@ -71,6 +71,7 @@ final class GameViewModel: ObservableObject {
         static let ping: UInt8 = 0x07
     }
     private enum Rsp {
+        static let pv: UInt8 = 0x86
         static let ok: UInt8 = 0x80
         static let err: UInt8 = 0x81
         static let move: UInt8 = 0x82
@@ -93,6 +94,7 @@ final class GameViewModel: ObservableObject {
     @Published var info: EngineInfo?
     @Published var lastMove: Move?
     @Published var moves: [MoveRecord] = []
+    @Published var pv: [Move] = []
     @Published var connected = false
     @Published var connecting = false
     @Published var portPath = ""
@@ -102,6 +104,21 @@ final class GameViewModel: ObservableObject {
     @Published var exportedPath: String?
 
     var thinking: Bool { pending == .go }
+    /// 搜索速度（节点/秒）。
+    var speed: Int {
+        guard let i = info, i.ms > 0 else { return 0 }
+        return i.nodes * 1000 / i.ms
+    }
+    /// 局面代码：空格分隔的逐手坐标（可复制/分享）。
+    var positionCode: String {
+        moves.map { $0.coord }.joined(separator: " ")
+    }
+    /// PV（路线）坐标串。
+    var pvText: String {
+        pv.map { m in
+            "\(String(UnicodeScalar(UInt8(65 + m.x))))\(m.y + 1)"
+        }.joined(separator: " ")
+    }
     /// 有待处理命令时锁定操作（悔棋等）。
     var pendingLock: Bool { pending != .none }
     var engineSide: Side { human.opposite }
@@ -206,6 +223,7 @@ final class GameViewModel: ObservableObject {
         info = nil
         lastMove = nil
         moves.removeAll()
+        pv.removeAll()
         pendingMove = nil
         pending = .newGame
         sendFrame(Cmd.newGame)
@@ -289,6 +307,15 @@ final class GameViewModel: ObservableObject {
     private func ingest(_ data: Data) {
         rx.append(data)
         while let first = rx.first {
+            if first == Rsp.pv {
+                if rx.count < 2 { break }
+                let n = Int(rx[rx.index(rx.startIndex, offsetBy: 1)])
+                if rx.count < 2 + n { break }
+                let frame = [UInt8](rx.prefix(2 + n))
+                rx.removeFirst(2 + n)
+                handleFrame(frame)
+                continue
+            }
             guard let n = Self.rspLen[first] else {
                 rx.removeFirst()
                 continue
@@ -351,8 +378,14 @@ final class GameViewModel: ObservableObject {
                                         nodes: nodes, ms: ms))
             }
             info = EngineInfo(depth: dep, score: score, nodes: nodes, ms: ms)
+            pv.removeAll()
             pending = .none
             applyState(f[16], f[17])
+        case Rsp.pv:
+            pv = (2..<f.count).map { i in
+                let c = Int(f[i])
+                return Move(x: c % Self.n, y: c / Self.n)
+            }
         case Rsp.status:
             applyState(f[1], f[2])
             if pending == .undo {

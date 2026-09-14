@@ -27,6 +27,8 @@
  *   0x83 STATUS [0x83][status][turn]                         3 字节
  *   0x84 TURN   [0x84][turn]                                 2 字节
  *   0x85 READY  [0x85]                                       1 字节
+ *   0x86 PV     [0x86][n][cell x n]                         2+n 字节
+ *               cell = x + y*15（最佳线路，紧随 MOVE 之后发送）
  *
  *   turn:   0=黑 1=白
  *   status: 0=进行中 1=黑胜 2=白胜 3=平局
@@ -48,6 +50,7 @@
 #define RAPFI_RSP_STATUS  0x83U
 #define RAPFI_RSP_TURN    0x84U
 #define RAPFI_RSP_READY   0x85U
+#define RAPFI_RSP_PV      0x86U
 
 /* 状态码 */
 #define RAPFI_ST_PLAYING  0U
@@ -59,6 +62,8 @@
 #define RAPFI_CMD_LEN     4U
 /** @brief MOVE 应答帧长度。 */
 #define RAPFI_MOVE_LEN    18U
+/** @brief PV 帧最大步数。 */
+#define RAPFI_PV_MAX      16U
 /** @brief OK / STATUS 应答帧长度。 */
 #define RAPFI_OK_LEN      3U
 

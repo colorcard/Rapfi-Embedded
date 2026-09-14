@@ -1,3 +1,4 @@
+import AppKit
 import Charts
 import SwiftUI
 
@@ -13,6 +14,7 @@ struct ContentView: View {
                 Color(nsColor: .windowBackgroundColor)
                 VStack(spacing: 10) {
                     BoardView(game: game).padding(.horizontal, 26).padding(.top, 18)
+                    AnalysisPanel(game: game).padding(.horizontal, 26)
                     EvalChart(points: game.evalPoints).padding(.horizontal, 26).padding(.bottom, 14)
                 }
                 resultOverlay
@@ -315,5 +317,86 @@ struct StoneSwatch: View {
                 center: .init(x: 0.35, y: 0.3), startRadius: 1, endRadius: size))
             .overlay(Circle().strokeBorder(.black.opacity(0.2), lineWidth: 0.6))
             .frame(width: size, height: size)
+    }
+}
+
+
+// MARK: - 分析面板（指标 / 路线 / 局面代码）
+
+struct AnalysisPanel: View {
+    @ObservedObject var game: GameViewModel
+
+    private var timeText: String {
+        guard let i = game.info else { return "-" }
+        if i.ms >= 1000 {
+            return String(format: "%.1fs", Double(i.ms) / 1000.0)
+        }
+        return "\(i.ms)ms"
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 0) {
+                metric("深度", game.info.map { "\($0.depth)" } ?? "-")
+                divider
+                metric("评估", game.info.map { "\($0.score)" } ?? "-")
+                divider
+                metric("速度", "\(game.speed)")
+                divider
+                metric("节点数", game.info.map { "\($0.nodes)" } ?? "0")
+                divider
+                metric("用时", timeText)
+            }
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.background.secondary))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(.primary.opacity(0.08)))
+
+            infoRow("路线", game.pvText)
+            infoRow("局面代码", game.positionCode)
+        }
+    }
+
+    private var divider: some View {
+        Divider().frame(height: 30)
+    }
+
+    private func metric(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.system(.body, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.callout.weight(.medium))
+            Text(value.isEmpty ? "—" : value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            if !value.isEmpty {
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(value, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .help("复制")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(.background.secondary))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(.primary.opacity(0.08)))
     }
 }

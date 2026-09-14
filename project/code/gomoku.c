@@ -105,6 +105,11 @@ static uint32_t s_deadline;
 static int s_time_limited;
 static int s_abort;
 static gomoku_stop_fn s_stop_hook;
+/* 三角 PV 表（每层的最佳线路），以及根 PV 供协议回传 */
+static uint8_t s_pv[MAX_PLY][MAX_PLY];
+static uint8_t s_pv_len[MAX_PLY];
+static uint8_t s_root_pv[MAX_PLY];
+static uint8_t s_root_pv_len;
 
 static int32_t pattern_value(int len, int open_l, int open_r);
 static void pat_refresh_all(void);
@@ -905,6 +910,7 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
   uint32_t key;
 
   ++s_nodes;
+  s_pv_len[ply] = 0U;
   if ((s_nodes & 0x3FFU) == 0U) {
     if ((s_stop_hook != NULL) && (s_stop_hook() != 0)) {
       s_abort = 1;
@@ -973,6 +979,11 @@ static int negamax(int side, int depth, int alpha, int beta, int ply)
     if (score > best) {
       best = score;
       best_move = idx;
+      s_pv[ply][0] = (uint8_t)idx;
+      if (s_pv_len[ply + 1] > 0U) {
+        memcpy(&s_pv[ply][1], &s_pv[ply + 1][0], (size_t)s_pv_len[ply + 1]);
+      }
+      s_pv_len[ply] = (uint8_t)(s_pv_len[ply + 1] + 1U);
     }
     if (score > alpha) {
       alpha = score;
@@ -1122,6 +1133,7 @@ static void search_root(int side, int depth, int alpha, int beta,
   uint32_t key = s_hash;
 
   s_abort = 0;
+  s_pv_len[0] = 0U;
   gen_candidates(0, side);
   limit = s_ncand[0];
   if (limit > ROOT_CAND) {
@@ -1164,6 +1176,11 @@ static void search_root(int side, int depth, int alpha, int beta,
     if (score > best) {
       best = score;
       best_move = idx;
+      s_pv[0][0] = (uint8_t)idx;
+      if (s_pv_len[1] > 0U) {
+        memcpy(&s_pv[0][1], &s_pv[1][0], (size_t)s_pv_len[1]);
+      }
+      s_pv_len[0] = (uint8_t)(s_pv_len[1] + 1U);
     }
     if (score > alpha) {
       alpha = score;
@@ -1211,6 +1228,7 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
   }
 
   s_nodes = 0U;
+  s_root_pv_len = 0U;
   s_time_limited = (time_limit_ms > 0U) ? 1 : 0;
   s_deadline = DWT->CYCCNT +
                (uint32_t)((uint64_t)time_limit_ms * 170000ULL);
@@ -1287,6 +1305,11 @@ int gomoku_search(int side, int max_depth, uint32_t time_limit_ms,
     }
   }
 
+  s_root_pv_len = s_pv_len[0];
+  if (s_root_pv_len > 0U) {
+    memcpy(s_root_pv, &s_pv[0][0], (size_t)s_root_pv_len);
+  }
+
 done:
   if (best_idx < 0) {
     int i;
@@ -1299,6 +1322,10 @@ done:
   }
   if (best_idx < 0) {
     return -1;
+  }
+  if (s_root_pv_len == 0U) {
+    s_root_pv[0] = (uint8_t)best_idx; /* 短路(成五/封堵/VCF)时给单步线路 */
+    s_root_pv_len = 1U;
   }
   if (res != NULL) {
     res->x = best_idx % GOMOKU_N;
@@ -1360,6 +1387,20 @@ int gomoku_ponder(int side, uint32_t slice_ms, int predict)
     }
   }
   return 0;
+}
+
+void gomoku_get_pv(uint8_t *out, int *len)
+{
+  int n = (int)s_root_pv_len;
+  if (n > MAX_PLY) {
+    n = MAX_PLY;
+  }
+  if (out != NULL) {
+    memcpy(out, s_root_pv, (size_t)n);
+  }
+  if (len != NULL) {
+    *len = n;
+  }
 }
 
 int gomoku_to_text(char *buf, int cap)
