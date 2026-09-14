@@ -210,11 +210,26 @@ struct SidebarView: View {
                     get: { game.depth },
                     set: { game.depth = max(1, min(12, $0)) }), in: 1...12) {
                     HStack {
-                        Text("搜索深度")
+                        Text("最大深度")
                         Spacer()
                         Text("\(game.depth)").monospacedDigit().foregroundStyle(.secondary)
                     }
                 }
+                Stepper(value: Binding(
+                    get: { game.thinkMs },
+                    set: { game.thinkMs = max(100, min(15000, $0)) }),
+                    in: 100...15000, step: 500) {
+                    HStack {
+                        Text("思考时限")
+                        Spacer()
+                        Text(game.thinkMs >= 1000
+                             ? String(format: "%.1fs", Double(game.thinkMs) / 1000.0)
+                             : "\(game.thinkMs)ms")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                }
+                Text("实际深度取二者先到者（时限到即停）")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 if game.thinking {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
